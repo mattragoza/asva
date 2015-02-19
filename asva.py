@@ -38,6 +38,7 @@ SLEEP_CRITERIA = (9,10)
 WAKE_CRITERIA  = (9,10)
 THRESHOLDS = [1.0]
 TRIM_ZEROES = True
+CALC_DAYLIGHT = True
 
 # Command line flags
 VERIFICATION = False
@@ -49,7 +50,7 @@ PRINT_OUTPUT = False
 READABLE = False
 
 # Analysis variables
-ENABLED = []
+ENABLED  = []
 DISABLED = [ "sunset","darkStart","sleepStart","SOL",\
 			"sunrise","darkEnd","sleepEnd","TWAK",\
 			"darkPeriod","sleepPeriod","sleepTST","WASO","SE",\
@@ -140,15 +141,19 @@ def batchRun(inputDir, outputFile):
 
 			# Calculate dark period
 			sunset, sunrise = calcSunsetSunrise(dateList[i])
-			lightsOff = 19*60
-			lightsOn = (7*60)+1440
-		#	if lightsOff > sunset:
-		#		darkStart = lightsOff
-		#	else: darkStart = sunset
-		#	if lightsOn < sunrise:
-		#		darkEnd = lightsOn
-		#	else: darkEnd = sunrise
-		#	darkPeriod = darkEnd - darkStart
+			lightsOff = (19*60)		# 19:00 == 7:00pm
+			lightsOn = (7*60)+1440	# 7:00am the following morning
+			if CALC_DAYLIGHT:
+				if lightsOff > sunset:
+					darkStart = lightsOff
+				else: darkStart = sunset
+				if lightsOn < sunrise:
+					darkEnd = lightsOn
+				else: darkEnd = sunrise
+			else:
+				darkStart = lightsOff
+				darkEnd = lightsOn
+			darkPeriod = darkEnd - darkStart
 
 			darkStart += offset
 			darkEnd += offset
@@ -904,7 +909,8 @@ def commandOptions(arguments):
 	print "THRESHOLDS : " + str(THRESHOLDS)
 	print "SLEEP_CRITERIA : " + str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1])
 	print "WAKE_CRITERIA : " + str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1])
-	print "TRIM_ZEROES : " + ("True", "False")[TRIM_ZEROES]
+	print "TRIM_ZEROES : " + str(TRIM_ZEROES)
+	print "CALC_DAYLIGHT : " + str(CALC_DAYLIGHT)
 
 
 
@@ -924,6 +930,7 @@ def commandSet(arguments):
 	global VERIFICATION
 	global EXAMINE
 	global DL
+	global CALC_DAYLIGHT
 
 	if len(arguments) < 2:
 		print "Requires option and value to set"
@@ -971,6 +978,15 @@ def commandSet(arguments):
 		elif arguments[1].lower() in FALSE:
 			TRIM_ZEROES = False
 			print "TRIM_ZEROES set to false"
+		else: print "Invalid boolean value"
+
+	elif arguments[0] == "CALC_DAYLIGHT":
+		if arguments[1].lower() in TRUE:
+			CALC_DAYLIGHT = True
+			print "CALC_DAYLIGHT set to true"
+		elif arguments[1].lower() in FALSE:
+			CALC_DAYLIGHT = False
+			print "CALC_DAYLIGHT set to false"
 		else: print "Invalid boolean value"
 
 
