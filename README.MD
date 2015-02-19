@@ -23,5 +23,12 @@ Program requirements:
 
 Usage:
 
- - Double click asva.py to run the executable
- - or call it from a command line with "python asva.py"
+ - Double click asva.py to run the executable command line interface
+ - Call asva.py from the command line through python:
+	python asva.py
+	
+ - Redirect standard input from a .asva file to automate commands:
+	python asva.py < abc.asva
+
+ - .asva files are batch jobs for automating commands, view and edit
+	them with any standard text editor

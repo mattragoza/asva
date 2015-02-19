@@ -835,8 +835,10 @@ def showSplash():
 def getCommand():
 
 	# Get user input and split strings by whitespace
-	pre = filter(None, raw_input(PROMPT).split(" "))
-	if len(pre) == 0: return "", []
+	try:
+		pre = filter(None, raw_input(PROMPT).split(" "))
+		if len(pre) == 0: return "", []
+	except EOFError: return "", []
 
 	inString = False
 	builder = []

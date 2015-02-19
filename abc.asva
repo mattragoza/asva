@@ -1,0 +1,12 @@
+set INPUT_TYPE .awc
+set THRESHOLDS 1.0
+set SLEEP_CRITERIA 9/10
+set WAKE_CRITERIA 9/10
+set TRIM_ZEROES True
+set CALC_DAYLIGHT True
+enable all
+disable sunset sunrise
+run "C:\Users\Matt\Cameron Lab\A-control" "C:\Users\Matt\Cameron Lab\A.csv" -r
+run "C:\Users\Matt\Cameron Lab\B-stress 1" "C:\Users\Matt\Cameron Lab\B.csv" -r
+run "C:\Users\Matt\Cameron Lab\C-stress 2" "C:\Users\Matt\Cameron Lab\C.csv" -r
+quit
