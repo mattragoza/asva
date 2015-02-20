@@ -1,9 +1,0 @@
-set INPUT_TYPE .awc
-set THRESHOLDS 1.0
-set SLEEP_CRITERIA 9/10
-set WAKE_CRITERIA 9/10
-set TRIM_ZEROES True
-set CALC_DAYLIGHT False
-enable all
-disable sunset sunrise
-run "C:\Users\Matt\Cameron Lab\oregon study activity files\all" "C:\Users\Matt\Cameron Lab\7to7.csv" -r -a
