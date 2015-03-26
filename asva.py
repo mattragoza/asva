@@ -1,7 +1,7 @@
 # ACTIGRAPHY SLEEP VARIABLE ANALYSIS
 # Merged from main_sleep_analysis_v5.py and verify_activity.py
 # Copyright 2015 Matt Ragoza
-VERSION = "6.1.0"
+VERSION = "6.2.0"
 
 import sys
 import os
@@ -12,10 +12,6 @@ import re
 import time
 import math
 import datetime
-import fileinput
-import Tkinter
-from tkFileDialog import *
-import ttk
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__))+"\\import")
 from astralmod import Astral
@@ -62,9 +58,9 @@ DISABLED = [ "sunset","darkStart","sleepStart","SOL",\
 
 
 # string batchRun(string, string)
-#	in:		string inputDir
-#			string outputFile
-#	out:	string error
+#   in:     string inputDir
+#           string outputFile
+#   out:    string error
 #
 # TODO description
 #
@@ -78,14 +74,14 @@ def batchRun(inputDir, outputFile):
 	# Write standard output headers
 	if not VERIFICATION and not FORMAT_AWC:
 		try: outputStream = open( os.path.join(outputFile), "w" )
-		except IOError:	return "Invalid output directory."
+		except IOError: return "Invalid output directory."
 		output( "id"+DL+"date", outputStream )
-		for var in ENABLED:	output( DL + str(var), outputStream )
+		for var in ENABLED: output( DL + str(var), outputStream )
 
 	# Process each input file
 	for inputFile in inputBatch:
 
-		print "\t" + inputFile + "\t",
+		print( "\t" + inputFile + "\t", end="" )
 		numDays = 0
 	
 		# Initialize variables for input data
@@ -104,14 +100,22 @@ def batchRun(inputDir, outputFile):
 
 				inputList = [line.strip() for line in inputStream]
 				monkeyNum = inputList[0]
-				startDate = inputList[1]
-				startTime = inputList[2]
+				sd = inputList[1].split("-")
+				st = inputList[2].split(":")
+
+				# supports data from 1980 onwards
+				year = int(sd[2])
+				if year < 80: year += 2000
+				elif year < 100: year += 1900
+				
+				sdt = datetime.datetime( year, monthToNum(sd[1]), int(sd[0]), int(st[0]), int(st[1]))
+				st = sdt.time()
+
 				if TRIM_ZEROES:
-					print " trimming",
 					activityList, startTrim, endTrim = trimData(inputList[AWC_HEADER:])
 				else:
 					activityList, startTrim, endTrim = inputList[AWC_HEADER:], 0, 0
-				dateList = getDates(startDate, startTrim, activityList)
+				dateList = getDates(sdt.date(), startTrim, activityList)
 
 			# .vl.csv files
 			elif INPUT_TYPE == ".vl.csv":
@@ -119,38 +123,38 @@ def batchRun(inputDir, outputFile):
 
 				inputList = list( list(line) for line in csv.reader(inputStream, delimiter=',') )
 				monkeyNum = inputList[1][0]
-				startDate = inputList[1][1]
-				startTime = inputList[1][2]
+				sd = inputList[1][1].split("-")
+				st = inputList[1][2].split(":")
+				sdt = datetime.datetime( int(sd[2]), monthToNum(sd[1]), int(sd[0]), int(st[0]), int(st[1]))
+				st = sdt.time()
 				for i in range(len(inputList)-1):
 					activityList.append(inputList[i+1][3])
 					videoList.append(inputList[i+1][4])
 				startTrim = endTrim = 0
-				dateList = [startDate]
+				dateList = [sdt.date()]
 
 		# Write .awc formatting output headers
 		if FORMAT_AWC:
 			try: outputStream = open(os.path.join(outputFile, inputFile[:-4] + ".awc.csv" ), "w")
-			except IOError:	return "Invalid output directory"
+			except IOError: return "Invalid output directory"
 			output( "date"+DL+"time"+DL+"activity"+DL+"sleep", outputStream )
 
 		# Classify wake and sleep from actigraphy
-		print " scoring",
 		scoreList = coleKripke(THRESHOLD[0], activityList)
 		criteriaList = hybridCriteria(scoreList, SLEEP_CRITERIA, WAKE_CRITERIA)
 		
 		# Compute variables for each night of data
 		printID = monkeyNum
-		print " analyzing",
 		for i in range(len(dateList)):
 
 			numDays += 1
-			printDate = dateList[i]
-			offset = i*1440 - ( minutes(startTime) + startTrim%1440 )
+			printDate = str(dateList[i])
+			offset = i*1440 - ( minutes(st) + startTrim%1440 )
 
 			# Calculate dark period
 			sunset, sunrise = calcSunsetSunrise(dateList[i])
-			lightsOff = (19*60)		# 19:00 == 7:00pm
-			lightsOn = (7*60)+1440	# 7:00am the following morning
+			lightsOff = (19*60)     # 19:00 == 7:00pm
+			lightsOn = (7*60)+1440  # 7:00am the following morning
 			if CALC_DAYLIGHT:
 				if lightsOff > sunset:
 					darkStart = lightsOff
@@ -189,13 +193,13 @@ def batchRun(inputDir, outputFile):
 				tfHourTST, tfHourTWT = countScores(scoreList, \
 					offset+(TWENTY_FOUR_START*60), offset+(TWENTY_FOUR_START*60)+1440)
 				NOC = (darkTST/float(tfHourTST)) * 100
-			except:	tfHourTST = tfHourTWT = ""
+			except: tfHourTST = tfHourTWT = ""
 
 			# Verification output mode
 			if VERIFICATION:
 				try: outputStream = open(os.path.join(outputFile, inputFile[:-20] + \
 					".ver.csv" ),"w")
-				except IOError:	return "Invalid output directory"
+				except IOError: return "Invalid output directory"
 
 				output( "id"+DL+"date"+DL+"threshold"+DL+"true positives"+DL+"true negatives"+DL+\
 					"false positives"+DL+"false negatives"+DL+"total", outputStream )
@@ -208,69 +212,69 @@ def batchRun(inputDir, outputFile):
 
 			# .awc formatting output mode
 			elif FORMAT_AWC:
-				if i==0: printDate = dateList[i]
+				if i==0: printDate = str(dateList[i])
 				for t in range(i*1440, (i+1)*1440):
-					if (t+minutes(startTime)+startTrim%1440)%1440==0 and (i+1)<len(dateList):
+					if (t+minutes(st)+startTrim%1440)%1440==0 and (i+1)<len(dateList):
 						printDate = dateList[i+1]
 					if t<len(activityList):
 						output( "\n"+printDate+DL+clock(t+minutes(startTime)+startTrim%1440)+DL+\
 							activityList[t]+DL+scoreList[t], outputStream )
 					if t==lightsOff+offset: output( DL+"lightsOff", outputStream )
-					if t==lightsOn+offset:	output( DL+"lightsOn", outputStream )
-					if t==sunset+offset:	output( DL+"sunset", outputStream )
-					if t==sunrise+offset:	output( DL+"sunrise", outputStream )
-					if t==sleepStart:		output( DL+"sleepStart", outputStream )
-					if t==sleepEnd:			output( DL+"sleepEnd", outputStream )
+					if t==lightsOn+offset:  output( DL+"lightsOn", outputStream )
+					if t==sunset+offset:    output( DL+"sunset", outputStream )
+					if t==sunrise+offset:   output( DL+"sunrise", outputStream )
+					if t==sleepStart:       output( DL+"sleepStart", outputStream )
+					if t==sleepEnd:         output( DL+"sleepEnd", outputStream )
 					if READABLE: printDate = ""
 
 			# Standard output mode
 			else:
 				pc = ("","%")[READABLE]
-				output("\n"+printID+DL+dateList[i], outputStream)
+				output("\n"+printID+DL+str(dateList[i]), outputStream)
 				for var in ENABLED:
-					if 	 var == "sunset": output(DL + clock(sunset), outputStream)
+					if   var == "sunset": output(DL + clock(sunset), outputStream)
 					elif var == "darkStart": output(DL + clock(darkStart-offset), outputStream)
 					elif var == "sleepStart": output(DL + clock(sleepStart-offset), outputStream)
 					elif var == "SOL": output(DL + str(SOL), outputStream)
 					elif var == "sunrise": output(DL + clock(sunrise), outputStream)
 					elif var == "darkEnd": output(DL + clock(darkEnd-offset), outputStream)
-					elif var == "sleepEnd":	output(DL + clock(sleepEnd-offset), outputStream)
-					elif var == "TWAK":	output(DL + str(TWAK), outputStream)
+					elif var == "sleepEnd": output(DL + clock(sleepEnd-offset), outputStream)
+					elif var == "TWAK": output(DL + str(TWAK), outputStream)
 					elif var == "darkPeriod": output(DL + str(darkPeriod), outputStream)
 					elif var == "sleepPeriod": output(DL + str(sleepPeriod), outputStream)
-					elif var == "sleepTST":	output(DL + str(sleepTST), outputStream)
-					elif var == "WASO":	output(DL + str(WASO), outputStream)
+					elif var == "sleepTST": output(DL + str(sleepTST), outputStream)
+					elif var == "WASO": output(DL + str(WASO), outputStream)
 					elif var == "SE": output(DL + "{:.2f}".format(SE) + pc, outputStream)
 					elif var == "24hourTST": output(DL + str(tfHourTST), outputStream)
 					elif var == "NOC": output(DL + "{:.2f}".format(NOC) + pc, outputStream)
 
-			if READABLE: printID = ""
-		print  str(numDays) + " days"
+			#dumb if READABLE: printID = ""
+		print(" " + str(numDays) + " days")
 
-        print "\nDone."
+	print("\nDone.")
 	outputStream.close()
 	return
 
 
 
 # void output(string, string)
-#	in:		string string
-#			string stream
-#	out:	none
+#   in:     string string
+#           string stream
+#   out:    none
 #
 # Writes to string to some file output stream, and potentially
 # outputs string to console.
 #
 def output(string, stream):
-	if PRINT_OUTPUT: print string,
+	if PRINT_OUTPUT: print(string, end="")
 	stream.write(string)
 
 
 
 # list coleKripke(list, list)
-#	in:		list threshold
-#			list activityList
-#	out:	list scoreList
+#   in:     list threshold
+#           list activityList
+#   out:    list scoreList
 #
 # Classifies minute activity data as wake or sleep by cole-kripke 
 # scoring and then comparison against an activity count threshold.
@@ -287,9 +291,9 @@ def coleKripke(threshold, activityList):
 			sumActivity = ( 0.04*int(activityList[i-2]) + 0.2*int(activityList[i-1]) \
 			+ 1.0*int(activityList[i]) + 0.2*int(activityList[i+1]) + 0.04*int(activityList[i+2]))
 
-		except:	pass
+		except: pass
 
-		if(sumActivity<=threshold):
+		if (sumActivity<=threshold):
 			score = SLEEP
 		else:
 			score = WAKE
@@ -301,10 +305,10 @@ def coleKripke(threshold, activityList):
 
 
 # list hybridCriteria(list, list, list)
-#	in:		list scoreList
-#			list sleepCriteria
-#			list wakeCriteria
-#	out:	list criteriaList
+#   in:     list scoreList
+#           list sleepCriteria
+#           list wakeCriteria
+#   out:    list criteriaList
 #
 # Builds criteriaList from scoreList by classifying transitions between
 # sleep and wake periods by sleepCriteria and wakeCritera. These criteria
@@ -335,11 +339,11 @@ def hybridCriteria(scoreList, sleepCriteria, wakeCriteria):
 
 		for look in range(m, m+lookahead):
 			try:
-				if(scoreList[look] == SLEEP and ahead < sd):
+				if (scoreList[look] == SLEEP and ahead < sd):
 					numSleep += 1
-				elif(scoreList[look] == WAKE and ahead < wd):
-					numWake += 1	
-			except:	pass
+				elif (scoreList[look] == WAKE and ahead < wd):
+					numWake += 1    
+			except: pass
 			ahead += 1
 
 		if awake and numSleep >= sn:
@@ -361,9 +365,9 @@ def hybridCriteria(scoreList, sleepCriteria, wakeCriteria):
 
 
 # int findSleepStart(list, int)
-#	in:		list criteriaList
-#			int offset
-#	out:	int startPeriod
+#   in:     list criteriaList
+#           int offset
+#   out:    int startPeriod
 #
 # Returns index of closest instance of sleep criteria in criteriaList
 # to offset minute, first searching backwards then forwards.
@@ -377,26 +381,26 @@ def findSleepStart(criteriaList, offset):
 	i = offset
 	while not found:
 		test = criteriaList[i]
-		if test == WAKE:	# found start of wake instead
+		if test == WAKE:    # found start of wake instead
 			break
 		elif test == SLEEP: # found start of sleep period
 			startPeriod = i
 			found = True
 		if i > 0:
 			i -= 1
-		else: 	# reached beginning of list
+		else:   # reached beginning of list
 			break
 
 	# continue looking forwards
 	i = offset
 	while not found:
 		test = criteriaList[i]
-		if test == SLEEP: 	# found start of sleep period
+		if test == SLEEP:   # found start of sleep period
 			startPeriod = i
 			found = True
 		if i < len(criteriaList) - 1:
 			i += 1
-		else:	# reached end of list
+		else:   # reached end of list
 			startPeriod = -1
 			break
 
@@ -405,9 +409,9 @@ def findSleepStart(criteriaList, offset):
 
 
 # int findWakeStart(list, int)
-#	in:		list criteriaList
-#			int offset
-#	out:	int startPeriod
+#   in:     list criteriaList
+#           int offset
+#   out:    int startPeriod
 #
 # Returns index of closest instance of wake criteria in criteriaList
 # to offset minute, first searching backwards then forwards.
@@ -421,26 +425,26 @@ def findWakeStart(criteriaList, offset):
 	i = offset
 	while not found:
 		test = criteriaList[i]
-		if test == SLEEP:	# found start of sleep instead
+		if test == SLEEP:   # found start of sleep instead
 			break
 		elif test == WAKE: # found start of wake period
 			startPeriod = i
 			found = True
 		if i > 0:
 			i -= 1
-		else:	# reached beginning of list
+		else:   # reached beginning of list
 			break
 
 	# continue looking forwards
 	i = offset
 	while not found:
 		test = criteriaList[i]
-		if test == WAKE: 	# found start of wake period
+		if test == WAKE:    # found start of wake period
 			startPeriod = i
 			found = True
 		if i < len(criteriaList) - 1:
 			i += 1
-		else:	# reached end of list
+		else:   # reached end of list
 			break
 
 	return startPeriod
@@ -448,11 +452,11 @@ def findWakeStart(criteriaList, offset):
 
 
 # int, int countScores(list, int, int)
-#	in:		list scoreList
-#			int start
-#			int end
-#	out:	int numSleep
-#			int numWake
+#   in:     list scoreList
+#           int start
+#           int end
+#   out:    int numSleep
+#           int numWake
 #
 # Counts the number of minutes of sleep and wake in scoreList
 # between start and end indices
@@ -473,12 +477,12 @@ def countScores(scoreList, start, end):
 
 
 # list compareList(list, list, boolean, int, int)
-#	in:		list videoList
-#			list scoreList
-#			boolean zeroPoint
-#			int compareStart
-#			int compareEnd
-#	out:	list compareList
+#   in:     list videoList
+#           list scoreList
+#           boolean zeroPoint
+#           int compareStart
+#           int compareEnd
+#   out:    list compareList
 #
 # Compares each minute of data in scoreList against videoList
 # between indices compareStart and compareEnd, taking into account
@@ -520,12 +524,12 @@ def compareToVideo(videoList, scoreList, zeroPoint, compareStart, compareEnd):
 
 
 # int, int, int, int, int verify(list)
-#	in:		list compareList
-#	out:	int truePos
-#			int trueNeg
-#			int falsePos
-#			int falseNeg
-#			int totalCompares
+#   in:     list compareList
+#   out:    int truePos
+#           int trueNeg
+#           int falsePos
+#           int falseNeg
+#           int totalCompares
 #
 # Counts verification statistics in comparison list.
 #
@@ -560,33 +564,24 @@ def verify(compareList):
 
 
 # int, int calcSunsetSunrise(string)
-#	in:		string dateStr
-#	out:	int sunset
-#			int sunrise
+#   in:     string dateStr
+#   out:    int sunset
+#           int sunrise
 #
 # Uses astral module to calculate number of minutes from midnight
 # on given date to sunset and following sunrise.
 #
-def calcSunsetSunrise(dateStr):
+def calcSunsetSunrise(date):
 
 	a = Astral()
 	a.solar_depression = "civil"
 	city = a[LOCALE]
 	timezone = city.timezone
-	
-	date  = dateStr.split('-')
-	day   = int(date[0])
-	month = monthToNum(date[1])
-	year  = int(date[2])
-
-	# supports data from 1980 onwards
-	if year < 80: year += 2000
-	elif year < 100: year += 1900
 
 	# get sunset time on given date
-	date = datetime.datetime(year, month, day)
 	sun  = city.sun(date, local = True)
 	sunset  = sun["sunset"]
+
 
 	# get sunrise time on following morning
 	date += datetime.timedelta(days=1)
@@ -596,16 +591,15 @@ def calcSunsetSunrise(dateStr):
 	# format as number of minute from midnight on dateStr
 	sunset  = (sunset.hour*60  + sunset.minute)
 	sunrise = (sunrise.hour*60 + sunrise.minute + 1440)
-
 	return sunset, sunrise
 
 
 
 # list, int, int trimData(list)
-#	in:		list inputList
-#	out:	list inputList
-#			int startTrim
-#			int endTrim
+#   in:     list inputList
+#   out:    list inputList
+#           int startTrim
+#           int endTrim
 #
 # Counts runs of zeroes at start and end of inputList, ignoring first/last 30 
 # minutes and ignoring 2 minute activity bouts. If there are more than some
@@ -628,7 +622,7 @@ def trimData(inputList):
 
 	if i > threshold:
 		startTrim = i + ignore
-		inputList = inputList[startTrim:]	# trim
+		inputList = inputList[startTrim:]   # trim
 
 	length = len(inputList)
 
@@ -649,8 +643,8 @@ def trimData(inputList):
 
 
 # int monthToNum(string)
-#	in:		string month
-#	out:	int num
+#   in:     string month
+#   out:    int num
 #
 # Converts a string calender month to numerical value.
 #
@@ -687,8 +681,8 @@ def monthToNum(month):
 
 
 # string numToMonth(int)
-#	in:		int num
-#	out:	string month
+#   in:     int num
+#   out:    string month
 #
 # Converts numerical month to string month abbreviation.
 #
@@ -703,76 +697,40 @@ def numToMonth(num):
 
 
 # list getDates(list, int, list)
-#	in:		list startDate
-#			int startTrim
-#			list inputList
-#	out:	list dateList
+#   in:     list startDate
+#           int startTrim
+#           list inputList
+#   out:    list dateList
 #
 # Returns a list of string dates covered by inputList, using startDate as the 
 # date of the first minute, and excluding days trimmed by startTrim
 #
-def getDates(startDate, startTrim, inputList):
+def getDates(currDate, startTrim, inputList):
 
 	dateList = []
-
-	# Format:	DD-MM-YYYY
-	startDate = startDate.split('-')
-	day   = int(startDate[0])
-	month = monthToNum(startDate[1])
-	year  = int(startDate[2])
-
-	trimDays = startTrim/1440
-	while trimDays:
-		day, month, year = incrementDate(day, month, year)
-		trimDays -= 1
+	currDate += datetime.timedelta(days = startTrim//1440)
 
 	numMins = len(inputList)
-	numDays = (numMins/1440) + 1
+	numDays = (numMins//1440) + 1
 
 	for d in range(numDays):
 
-		day, month, year = incrementDate(day, month, year)
-		nextDate = str(day) + "-" + numToMonth(month) + "-" + str(year)
-		dateList.append(nextDate)
+		dateList.append(currDate)
+		currDate += datetime.timedelta(days = 1)
 
 	return dateList
 
 
 
-# int, int, int incrementDate(int, int, int)
-#	in:		int day
-#			int month
-#			int year
-#	out:	int day
-#			int month
-#			int year
-#
-# Increments a numerical calender date by one day. Does not account for lear years.
-#
-def incrementDate(day, month, year):
-
-	if (month in [4, 6, 9, 11] and day == 30) or (month == 2 and day == 28) or day == 31:
-		day = 0
-		if month == 12:
-			month = 0
-			if year == 99:
-				year = -1
-			year += 1
-		month += 1
-	day += 1
-	return day, month, year
-
-
-
 # string clock(int)
-#	in:		int minutes
-#	out:	string clock
+#   in:     int minutes
+#   out:    string clock
 #
 # Converts a number of minutes to a string containing 24 hour clock time in
 # format HH:MM:SS
 #
 def clock(minutes):
-	hour = str((minutes/60)%24)
+	hour = str((minutes//60)%24)
 	minute = minutes%60
 	if minute < 10:
 		minute = "0" + str(minute)
@@ -785,14 +743,14 @@ def clock(minutes):
 
 
 # int minutes(string)
-#	in:		string clock
-#	out:	int minutes
+#   in:     string clock
+#   out:    int minutes
 #
 # Converts a string containing a 24 hour clock time of format HH:MM:SS or HH:MM
 # to a number of minutes after midnight.
 #
-def minutes(clock):
-	clock = clock.split(':')
+def minutes(t):
+	clock = [t.hour, t.minute]
 	if len(clock) == 2:
 		return sum( [a*b for a,b in zip( [60, 1], map(int, clock) )] )
 	elif len(clock) == 3:
@@ -803,8 +761,8 @@ def minutes(clock):
 
 
 # boolean isValidDir(string)
-#	in:		string dirName
-#	out:	boolean valid
+#   in:     string dirName
+#   out:    boolean valid
 #
 # Returns whether or not a string contains characters that render it an
 # invalid directory name.
@@ -817,35 +775,35 @@ def isValidDir(dirName):
 
 
 # void showSplash()
-#	in:		none
-#	out:	none
+#   in:     none
+#   out:    none
 #
 # Prints out the program name, current version, copyright information,
 # and other relevant information.
 #
 def showSplash():
-	print "Actigraphy Sleep Variable Analysis"
-	print "Version " + VERSION + " | Copyright 2015 Matt Ragoza"
-	print "Developed for the Cameron Lab at the University of Pittsburgh\n"
+	print("Actigraphy Sleep Variable Analysis | Version " + VERSION)
+	print("Developed by Matt Ragoza and Mario Pongibove")
+	print("Copyright 2015 Cameron Lab, University of Pittsburgh\n")
 
 
 # string, list getCommand()
-#	in:		none
-#	out:	string command
-#			list arguments
+#   in:     none
+#   out:    string command
+#           list arguments
 #
 # Gets a list of strings separated by white space from command line input,
 # groups together strings that were surrounded by quotation marks "", and
 # adds these strings to argument list. The first argument is returned as
 # the command, the following are the arguments.
 #
-def getCommand(stream):
+def getCommand():
 
 	# Get user input and split strings by whitespace
-	print PROMPT,
-	line = stream.readline().replace('\n', '')
-	pre = filter(None, line.split(" "))
-	if len(pre) == 0: return "", []
+	print(PROMPT, end="")
+	line = input().replace('\n', '')
+	pre = list(filter(None, line.split(" ")))
+	if len(pre) == 0: return []
 
 	inString = False
 	builder = []
@@ -873,60 +831,56 @@ def getCommand(stream):
 			builder = []
 			string = ""
 
-	if len(arguments) == 1:
-		return arguments[0], []
-	else:
-		return arguments[0], arguments[1:]
+	return arguments
 
 
 
 # void commandHelp(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Prints all recognized commands, their argument format, and their functionality.
 #
 def commandHelp(arguments):
-	print "Commands:\n"
-	print "\toptions\t\tDisplay current option settings"
-	print "\tset <opt> <val>\tSet analysis options"
-	print "\tvariables\t\tDisplay variable definitions"
-	print "\tenable <var>\tView or add to enabled variables"
-	print "\tdisable <var>\tView or add to disabled variables"
-	print "\trun <in> <out>\tWrite analysis of input directory to output file"
-	print "\t\t<flags>"
-	print "\t\t-v\toutput verification statistics instead of standard vars"
-	print "\t\t-t\tuse tab delimiters instead of commas"
-	print "\t\t-a\tautorun the output file when analysis is finished"
-	print "\t\t-f\toutput formatted activity files with additonal info"
-	print "\t\t-p\tprints output to console as well as to output file"
-	print "\t\t-r\toutput more readable times and subject IDs"
- 
-	print "\tquit\t\tTerminate the program (can also use ctrl+C)\n"
+	print("Commands:\n")
+	print("\toptions\t\tDisplay current option settings")
+	print("\tset <opt> <val>\tSet analysis options")
+	print("\tvariables\t\tDisplay variable definitions")
+	print("\tenable <var>\tView or add to enabled variables")
+	print("\tdisable <var>\tView or add to disabled variables")
+	print("\trun <in> <out>\tWrite analysis of input directory to output file")
+	print("\t\t<flags>")
+	print("\t\t-v\toutput verification statistics instead of standard vars")
+	print("\t\t-t\tuse tab delimiters instead of commas")
+	print("\t\t-a\tautorun the output file when analysis is finished")
+	print("\t\t-f\toutput formatted activity files with additonal info")
+	print("\t\t-p\tprints output to console as well as to output file")
+	print("\t\t-r\toutput more readable times and subject IDs")
+	print("\tquit\t\tTerminate the program (can also use ctrl+C)\n")
 
 
 
 # void commandOptions(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Prints global variables and their current settings.
 #
-def commandOptions(arguments, header):
-	if header: print "Options:\n"
-	print "\tLOCALE\t\t" + str(LOCALE)
-	print "\tINPUT_TYPE\t" + str(INPUT_TYPE)
-	print "\tTHRESHOLD\t" + str(THRESHOLD)[1:-1]
-	print "\tSLEEP_CRITERIA\t" + str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1])
-	print "\tWAKE_CRITERIA\t" + str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1])
-	print "\tTRIM_ZEROES\t" + str(TRIM_ZEROES)
-	print "\tCALC_DAYLIGHT\t" + str(CALC_DAYLIGHT) + "\n"
+def commandOptions(arguments):
+	print("Options:\n")
+	print("\tLOCALE\t\t" + str(LOCALE))
+	print("\tINPUT_TYPE\t" + str(INPUT_TYPE))
+	print("\tTHRESHOLD\t" + str(THRESHOLD)[1:-1])
+	print("\tSLEEP_CRITERIA\t" + str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1]))
+	print("\tWAKE_CRITERIA\t" + str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1]))
+	print("\tTRIM_ZEROES\t" + str(TRIM_ZEROES))
+	print("\tCALC_DAYLIGHT\t" + str(CALC_DAYLIGHT) + "\n")
 
 
 
 # void commandSet(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Sets the value of a global variable.
 #
@@ -943,30 +897,33 @@ def commandSet(arguments):
 	global DL
 	global CALC_DAYLIGHT
 
-	print "Options:\n"
 	if len(arguments) < 2:
-		print "Requires option and value to set.\n"
+		print("Requires option and value to set.\n")
 
 	elif arguments[0] == "LOCALE":
 		temp = LOCALE
 		LOCALE = arguments[1]
-		try: Astral()[LOCALE]
+		try:
+			Astral()[LOCALE]
+			print("LOCALE set to " + LOCALE + "\n")
 		except KeyError:
-			print "Locale was not recognized by astralmod.py\n"
+			print("Locale was not recognized by astralmod.py\n")
 			LOCALE = temp
 
 	elif arguments[0] == "INPUT_TYPE":
 		if arguments[1] in SUPPORTED_TYPES:
 			INPUT_TYPE = str(arguments[1])
+			print("INPUT_TYPE set to " + INPUT_TYPE + "\n")
 		else:
-			print "Supported input types:",
-			for t in SUPPORTED_TYPES: print " " + t,
-			print "\n"
+			print("Supported input types:", end="")
+			for t in SUPPORTED_TYPES: print(" " + t, end="")
+			print("\n")
 
 	elif arguments[0] == "THRESHOLD":
 		try:
 			THRESHOLD = [float(t) for t in arguments[1:]]
-		except ValueError: print "Invalid threshold value.\n"
+			print("THRESHOLD set to " + str(THRESHOLD)[1:-1] + "\n")
+		except ValueError: print("Invalid threshold value.\n")
 
 	elif arguments[0] == "SLEEP_CRITERIA":
 		tempCriteria = arguments[1].split('/')
@@ -976,7 +933,8 @@ def commandSet(arguments):
 				print("Invalid criteria setting.\n")
 			else:
 				SLEEP_CRITERIA = tempCriteria
-		except ValueError: print "Invalid criteria setting.\n"
+				print("SLEEP_CRITERIA set to " + str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1]) + "\n")
+		except ValueError: print("Invalid criteria setting.\n")
 
 	elif arguments[0] == "WAKE_CRITERIA":
 		tempCriteria = arguments[1].split('/')
@@ -986,59 +944,64 @@ def commandSet(arguments):
 				print("Invalid criteria setting.\n")
 			else:
 				WAKE_CRITERIA = tempCriteria
-		except ValueError: print "Invalid criteria setting.\n"
+				print("WAKE_CRITERIA set to " + str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1]) + "\n")
+		except ValueError: print("Invalid criteria setting.\n")
 
 	elif arguments[0] == "TRIM_ZEROES":
 		if arguments[1].lower() in TRUE:
 			TRIM_ZEROES = True
+			print("TRIM_ZEROES set to " + str(TRIM_ZEROES) + "\n")
 		elif arguments[1].lower() in FALSE:
 			TRIM_ZEROES = False
-		else: print "Invalid boolean value.\n"
+			print("TRIM_ZEROES set to " + str(TRIM_ZEROES) + "\n")
+		else: print("Invalid boolean value.\n")
 
 	elif arguments[0] == "CALC_DAYLIGHT":
 		if arguments[1].lower() in TRUE:
 			CALC_DAYLIGHT = True
+			print("CALC_DAYLIGHT set to " + str(TRIM_ZEROES) + "\n")
 		elif arguments[1].lower() in FALSE:
 			CALC_DAYLIGHT = False
-		else: print "Invalid boolean value.\n"
+			print("CALC_DAYLIGHT set to " + str(TRIM_ZEROES) + "\n")
+		else: print("Invalid boolean value.\n")
 
-	else: print "Option " + arguments[0] + " does not exist.\n"
-
-	commandOptions(arguments, False)
+	else: print("Option " + arguments[0] + " does not exist.\n")
 
 
 
 # void commandVars(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Prints all analysis variables and their definitions.
 #
 def commandVars(arguments):
-	print "Variables:\n"
-	print "\tsunset\t\tTime of sunset on a given date in LOCALE."
-	print "\tsunrise\t\tTime of sunrise on a given date in LOCALE."
-	print "\tdarkStart\tThe last minute of light, given as 19:00, or compared\n\t\t\tagainst sunset if CALC_DAYLIGHT is applied."
-	print "\tdarkEnd\t\tThe first minute of light, given as 7:00, or compared\n\t\t\tagainst sunrise if CALC_DAYLIGHT is applied."
-	print "\tdarkPeriod\tThe number of minutes from darkStart to darkEnd."
-	print "\tsleepStart\tClosest instance of "+str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1])+\
-		" minutes asleep to darkStart,\n\t\t\tdefined by SLEEP_CRITERIA."
-	print "\tsleepEnd\tClosest instance of "+str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1])+\
-		" minutes awake to darkEnd,\n\t\t\tdefined by WAKE_CRITERIA."
-	print "\tsleepPeriod\tThe number of minutes from sleepStart to sleepEnd."
-	print "\tsleepTST\tThe number of minutes scored as sleep during the\n\t\t\tsleepPeriod."
-	print "\tWASO\t\tWake after sleep onset, number of wake minutes in\n\t\t\tsleepPeriod."
-	print "\tSOL\t\tSleep onset latency, number of minutes from darkStart\n\t\t\tto sleepStart."
-	print "\tTWAK\t\tTime awake before light, number of minutes from\n\t\t\tsleepEnd to darkEnd."
-	print "\tSE\t\tSleep efficiency, the percent of darkPeriod scored\n\t\t\tas sleep."
-	print "\t24hourTST\tTotal number of minutes of sleep in a 24 hour period."
-	print "\tNOC\t\tNocturnal sleep consolidation, percent of 24 hour\n\t\t\tsleep in darkPeriod.\n"
+	print("Variables:\n")
+	print("\tsunset\t\tTime of sunset on a given date in LOCALE.")
+	print("\tsunrise\t\tTime of sunrise on a given date in LOCALE.")
+	print("\tdarkStart\tThe last minute of light, given as 19:00, or compared\n\t\t\tagainst " + \
+		"sunset if CALC_DAYLIGHT is applied.")
+	print("\tdarkEnd\t\tThe first minute of light, given as 7:00, or compared\n\t\t\tagainst " + \
+		"sunrise if CALC_DAYLIGHT is applied.")
+	print("\tdarkPeriod\tThe number of minutes from darkStart to darkEnd.")
+	print("\tsleepStart\tClosest instance of "+str(SLEEP_CRITERIA[0])+"/"+str(SLEEP_CRITERIA[1])+\
+		" minutes asleep to darkStart,\n\t\t\tdefined by SLEEP_CRITERIA.")
+	print("\tsleepEnd\tClosest instance of "+str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1])+\
+		" minutes awake to darkEnd,\n\t\t\tdefined by WAKE_CRITERIA.")
+	print("\tsleepPeriod\tThe number of minutes from sleepStart to sleepEnd.")
+	print("\tsleepTST\tThe number of minutes scored as sleep during the\n\t\t\tsleepPeriod.")
+	print("\tWASO\t\tWake after sleep onset, number of wake minutes in\n\t\t\tsleepPeriod.")
+	print("\tSOL\t\tSleep onset latency, number of minutes from darkStart\n\t\t\tto sleepStart.")
+	print("\tTWAK\t\tTime awake before light, number of minutes from\n\t\t\tsleepEnd to darkEnd.")
+	print("\tSE\t\tSleep efficiency, the percent of darkPeriod scored\n\t\t\tas sleep.")
+	print("\t24hourTST\tTotal number of minutes of sleep in a 24 hour period.")
+	print("\tNOC\t\tNocturnal sleep consolidation, percent of 24 hour\n\t\t\tsleep in darkPeriod.\n")
 
 
 
 # void commandEnable(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Includes a variable in the next analysis and prints all enabled variables.
 #
@@ -1051,18 +1014,18 @@ def commandEnable(arguments):
 		elif var in DISABLED:
 			ENABLED.append(var)
 			DISABLED.remove(var)
-	print "Enabled variables:\n"
+	print("Enabled variables:\n")
 	if len(ENABLED) == 0:
-		print "\tNone"
+		print("\tNone")
 	else:
-		for var in ENABLED: print "\t"+var
-	print ""
+		for var in ENABLED: print("\t"+var)
+	print("")
 
 
 
 # void commandDisable(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Excludes a variable from the next analysis and prints all disabled variables.
 #
@@ -1075,33 +1038,33 @@ def commandDisable(arguments):
 		elif var in ENABLED:
 			DISABLED.append(var)
 			ENABLED.remove(var)
-	print "Disabled variables:\n"
+	print("Disabled variables:\n")
 	if len(DISABLED) == 0:
-		print "\tNone"
+		print("\tNone")
 	else:
-		for var in DISABLED: print "\t"+var
-	print ""
+		for var in DISABLED: print("\t"+var)
+	print("")
 
 
 
 # void commandRun(list)
-#	in:		list arguments
-#	out:	none
+#   in:     list arguments
+#   out:    none
 #
 # Runs a batch analysis on an input directory and writes to output file(s).
 # Arguments are <flags*> <input path> <output path>
 #
 # Optional flags:
-#	-v :	Substitute variables analysis for verification, which compares
-#				minute actigraphy to videography. Outputs one .ver.csv file
-#				per night of input data in .vl.csv format.
-#	-t :	Use tab as delimiter in output files instead of comma
-#	-a :	Opens the output file/folder automatically on completion
-#	-f :	Substitute variabe analysis for .awc formatting, which outputs
-#				raw lists of minute times, activity, scores, and events.
-#				Outputs one .awc.csv file per input .awc file.
-#	-p :	Prints output to console as it writes it to file
-#	-r :	Outputs more human-readable data	
+#   -v :    Substitute variables analysis for verification, which compares
+#               minute actigraphy to videography. Outputs one .ver.csv file
+#               per night of input data in .vl.csv format.
+#   -t :    Use tab as delimiter in output files instead of comma
+#   -a :    Opens the output file/folder automatically on completion
+#   -f :    Substitute variabe analysis for .awc formatting, which outputs
+#               raw lists of minute times, activity, scores, and events.
+#               Outputs one .awc.csv file per input .awc file.
+#   -p :    Prints output to console as it writes it to file
+#   -r :    Outputs more human-readable data    
 #
 def commandRun(arguments):
 
@@ -1143,34 +1106,34 @@ def commandRun(arguments):
 	else: READABLE = False
 
 	if len(arguments) < 2:
-		print "Requires input directory and output file.\n"
+		print("Requires input directory and output file.\n")
 		return
 	else:
 
 		inputDir = arguments[0]
 		if not os.path.isdir(inputDir):
-			print "Input directory not found.\n"
+			print("Input directory not found.\n")
 			return
 		if len(arguments) > 1: outputFile = arguments[1]
 
 		if not ENABLED and not VERIFICATION and not FORMAT_AWC:
-			print "No output variables enabled.\n"
+			print("No output variables enabled.\n")
 			return
 
-		print "Running analysis of " + INPUT_TYPE + " files in " + os.path.abspath(inputDir)
-		print "Writing output to " + os.path.abspath(outputFile) + "\n"
+		print("Running analysis of " + INPUT_TYPE + " files in " + os.path.abspath(inputDir))
+		print("Writing output to " + os.path.abspath(outputFile) + "\n")
 		error = batchRun(inputDir, outputFile)
-		if error: print "\nError: " + error
+		if error: print("\nError: " + error)
 		elif AUTORUN:
-			print "Starting " + os.path.abspath(outputFile)
+			print("Starting " + os.path.abspath(outputFile))
 			os.system( "start \"\" \"" + outputFile.replace('/','\\') + "\"" )
-		print ""
+		print("")
 
 
 
 # void cli()
-#	in:		none
-#	out:	none
+#   in:     none
+#   out:    none
 #
 # Implements a command line interface, allowing user to enter commands
 # and arguments that modify the program's settings, input, and output
@@ -1178,90 +1141,33 @@ def commandRun(arguments):
 #
 def cli():
 	
-	command = "asva"
-	arguments = []
+	arguments = [""]
+	print (os.getcwd())
+	showSplash()
 
-	if len(sys.argv)>1:
-		try:
-			stream = open(sys.argv[1], "r")
-		except IOError:
-			print "Error: Unable to open file."
-			return
-	else:
-		stream = sys.stdin
+	#if len(sys.argv)>1:
+	#	stream = open(str(sys.argv[1]), "r")
+	#else:
+	#	stream = sys.stdin
 
 	while True:
 
 		try:
-
-			os.system(CLEAR)
-			print os.getcwd()
-
-			if   command == "asva":		showSplash()
-			elif command == "help":		commandHelp(arguments)
-			elif command == "options":	commandOptions(arguments, "Options")
-			elif command == "set":		commandSet(arguments)
-			elif command == "variables":commandVars(arguments)
-			elif command == "enable":	commandEnable(arguments)
-			elif command == "disable":	commandDisable(arguments)
-			elif command == "run":		commandRun(arguments)
-			elif command == "quit":		break
-			elif command == "":			pass
-			else: print "Command not recognized, try \"help\".\n"
-
-			command, arguments = getCommand(stream)
+			arguments = getCommand()
+ 
+			if   len(arguments) == 0: 		pass
+			elif arguments[0] == "help":    commandHelp(arguments[1:])
+			elif arguments[0] == "options": commandOptions(arguments[1:])
+			elif arguments[0] == "set":     commandSet(arguments[1:])
+			elif arguments[0] == "variables":commandVars(arguments[1:])
+			elif arguments[0] == "enable":  commandEnable(arguments[1:])
+			elif arguments[0] == "disable": commandDisable(arguments[1:])
+			elif arguments[0] == "run":     commandRun(arguments[1:])
+			elif arguments[0] == "quit":    break
+			else: print ("Command not recognized, try \"help\".\n")
 
 		except KeyboardInterrupt: break
 
-	os.system(CLEAR)
 	return
 
-def commandOpen():
-
-	return app.askopenfilename(self, parent)
-
-def gui():
-
-	app.mainloop()
-
-class asvaApp(Tkinter.Tk):
-	def __init__(self, parent, path):
-		Tkinter.Tk.__init__(self, parent)
-		self.parent = parent
-		self.title("Actigraphy Sleep Variable Analysis | Version " + VERSION)
-		self.geometry("800x600")
-		self.resizable(False, False)
-		self.update()
-		self.geometry(self.geometry())
-
-		self.menuBar = Tkinter.Menu(self)
-		self.fileMenu = Tkinter.Menu(self.menuBar, tearoff=0)
-		self.fileMenu.add_command(label="New")
-		self.fileMenu.add_command(label="Open", command=commandOpen)
-		self.fileMenu.add_command(label="Save")
-		self.fileMenu.add_separator()
-		self.fileMenu.add_command(label="Exit", command=self.quit)
-		self.menuBar.add_cascade(label="File", menu=self.fileMenu)
-		self.config(menu=self.menuBar)
-
-		self.awcList = []
-		self.awcListbox = Tkinter.Listbox(self)
-
-		self.fileTree = ttk.Treeview(self, height=27)
-		abspath = os.path.abspath(path)
-		rootNode = self.fileTree.insert("", "end", text=abspath, open=True)
-		self.displayDir(rootNode, abspath)
-
-		self.fileTree.grid(row=0, column=0, padx=6, pady=6)
-
-	def displayDir(self, parent, path):
-		for i in os.listdir(path):
-			abspath = os.path.join(path, i)
-			isdir = os.path.isdir(abspath)
-			oid = self.fileTree.insert(parent, "end", text=i, open=False)
-			if isdir: self.displayDir(oid, abspath)
-
-
-if __name__ == "__main__" :
-	#app = asvaApp(None, os.getcwd())
-	cli()
+if __name__ == "__main__" : cli()

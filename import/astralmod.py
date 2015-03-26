@@ -390,7 +390,7 @@ class City(object):
             return self._latitude
             
         def fset(self, latitude):
-            if type(latitude) == types.StringType:
+            if type(latitude) == str:
                 (deg, rest) = latitude.split("°", 1)
                 (minute, rest) = rest.split("'", 1)
 
@@ -423,7 +423,7 @@ class City(object):
             return self._longitude
             
         def fset(self, longitude):
-            if type(longitude) == types.StringType:
+            if type(longitude) == str:
                 (deg, rest) = longitude.split("°", 1)
                 (minute, rest) = rest.split("'", 1)
 
@@ -632,7 +632,7 @@ class City(object):
         sun = self._astral.sun_utc(date, self.latitude, self.longitude)
 
         if local:
-            for key, dt in sun.iteritems():
+            for key, dt in sun.items():
                 sun[key] = dt.astimezone(self.tz)
 
         return sun
@@ -658,7 +658,7 @@ class City(object):
         rahukaalam = self._astral.rahukaalam_utc(date, self.latitude, self.longitude)
 
         if local:
-            for key, dt in rahukaalam.iteritems():
+            for key, dt in rahukaalam.items():
                 rahukaalam[key] = dt.astimezone(self.tz)
             
         return rahukaalam
@@ -737,7 +737,7 @@ class Astral(object):
             
         city_name = city_name.strip()
 
-        for (name, city) in self._cities.iteritems():
+        for (name, city) in self._cities.items():
             if name.lower().replace(' ', '_') == city_name:
                 return city
 
@@ -773,7 +773,7 @@ class Astral(object):
             return self._depression
             
         def fset(self, depression):
-            if type(depression) == types.StringType:
+            if type(depression) == str:
                 try:
                     self._depression = {'civil': 6, 'nautical': 12, 'astronomical': 18}[depression]
                 except:
