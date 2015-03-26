@@ -1,7 +1,7 @@
-# ACTIGRAPHY SLEEP VARIABLE ANALYSIS
-# Merged from main_sleep_analysis_v5.py and verify_activity.py
-# Copyright 2015 Matt Ragoza
 VERSION = "6.2.0"
+SPLASH = "Actigraphy Sleep Variable Analysis | Version " + VERSION + \
+		 "\nDeveloped by Matt Ragoza and Mario Pongibove" + \
+		 "\nCopyright 2015 Cameron Lab, University of Pittsburgh\n"
 
 import sys
 import os
@@ -56,14 +56,6 @@ DISABLED = [ "sunset","darkStart","sleepStart","SOL",\
 			"24hourTST","NOC" ]
 
 
-
-# string batchRun(string, string)
-#   in:     string inputDir
-#           string outputFile
-#   out:    string error
-#
-# TODO description
-#
 def batchRun(inputDir, outputFile):
 
 	# Get input file batch
@@ -256,41 +248,25 @@ def batchRun(inputDir, outputFile):
 	return
 
 
-
-# void output(string, string)
-#   in:     string string
-#           string stream
-#   out:    none
-#
-# Writes to string to some file output stream, and potentially
-# outputs string to console.
-#
 def output(string, stream):
 	if PRINT_OUTPUT: print(string, end="")
 	stream.write(string)
 
 
-
-# list coleKripke(list, list)
-#   in:     list threshold
-#           list activityList
-#   out:    list scoreList
-#
-# Classifies minute activity data as wake or sleep by cole-kripke 
-# scoring and then comparison against an activity count threshold.
-#
 def coleKripke(threshold, activityList):
+	"""
+	Classify minute to minute actigraphy data as wake or sleep by
+	Cole-Kripke algorithm, using comparison against the given
+	activity count threshold for a weighted 5 minutes window.
+	"""
 
 	sumActivity = 0
 	scoreList = []
 
 	for i in range(len(activityList)):
-
 		try:
-
 			sumActivity = ( 0.04*int(activityList[i-2]) + 0.2*int(activityList[i-1]) \
 			+ 1.0*int(activityList[i]) + 0.2*int(activityList[i+1]) + 0.04*int(activityList[i+2]))
-
 		except: pass
 
 		if (sumActivity<=threshold):
@@ -303,21 +279,15 @@ def coleKripke(threshold, activityList):
 	return scoreList
 
 
-
-# list hybridCriteria(list, list, list)
-#   in:     list scoreList
-#           list sleepCriteria
-#           list wakeCriteria
-#   out:    list criteriaList
-#
-# Builds criteriaList from scoreList by classifying transitions between
-# sleep and wake periods by sleepCriteria and wakeCritera. These criteria
-# arguments should take the form of 2-element lists, where criteria[0] is the
-# numerator and criteria[1] is the denominator- a given minute in scoreList is
-# classified as a transition betweens states if criteria[0] out of the 
-# following criteria[1] minutes are scored as the opposite state.
-#
 def hybridCriteria(scoreList, sleepCriteria, wakeCriteria):
+	"""
+	Build criteriaList from scoreList by classifying transitions between
+	sleep and wake periods by sleepCriteria and wakeCritera. These criteria
+	arguments should take the form of 2-element lists, where criteria[0] is the
+	numerator and criteria[1] is the denominator- a given minute in scoreList is
+	classified as a transition betweens states if criteria[0] out of the 
+	following criteria[1] minutes are scored as the opposite state.
+	"""
 
 	criteriaList = []
 	criteriaScore = '-'
@@ -363,16 +333,11 @@ def hybridCriteria(scoreList, sleepCriteria, wakeCriteria):
 	return criteriaList
 
 
-
-# int findSleepStart(list, int)
-#   in:     list criteriaList
-#           int offset
-#   out:    int startPeriod
-#
-# Returns index of closest instance of sleep criteria in criteriaList
-# to offset minute, first searching backwards then forwards.
-#
 def findSleepStart(criteriaList, offset):
+	"""
+	Return index of closest instance of sleep criteria in criteriaList
+	to offset minute, first searching backwards then forwards.
+	"""
 
 	found = False
 	startPeriod = -1
@@ -407,16 +372,11 @@ def findSleepStart(criteriaList, offset):
 	return startPeriod
 
 
-
-# int findWakeStart(list, int)
-#   in:     list criteriaList
-#           int offset
-#   out:    int startPeriod
-#
-# Returns index of closest instance of wake criteria in criteriaList
-# to offset minute, first searching backwards then forwards.
-#
 def findWakeStart(criteriaList, offset):
+	"""
+	Return the index of closest instance of wake criteria in criteriaList
+	to offset minute, first searching backwards then forwards.
+	"""
 
 	found = False
 	startPeriod = 1320
@@ -450,18 +410,11 @@ def findWakeStart(criteriaList, offset):
 	return startPeriod
 
 
-
-# int, int countScores(list, int, int)
-#   in:     list scoreList
-#           int start
-#           int end
-#   out:    int numSleep
-#           int numWake
-#
-# Counts the number of minutes of sleep and wake in scoreList
-# between start and end indices
-#
 def countScores(scoreList, start, end):
+	"""
+	Count the number of minutes of sleep and wake in scoreList
+	between start and end indices.
+	"""
 
 	numSleep = 0
 	numWake  = 0
@@ -475,21 +428,13 @@ def countScores(scoreList, start, end):
 	return numSleep, numWake
 
 
-
-# list compareList(list, list, boolean, int, int)
-#   in:     list videoList
-#           list scoreList
-#           boolean zeroPoint
-#           int compareStart
-#           int compareEnd
-#   out:    list compareList
-#
-# Compares each minute of data in scoreList against videoList
-# between indices compareStart and compareEnd, taking into account
-# whether zeroPoint threshold mode is active. Returns a list of
-# true/false positive/negatives comparisons
-#
 def compareToVideo(videoList, scoreList, zeroPoint, compareStart, compareEnd):
+	"""
+	Compare each minute of data in score list against video list
+	between indices compareStart and compareEnd, taking into account
+	whether zeroPoint threshold mode is active. Returns a list of
+	true/false positive/negatives comparisons.
+	"""
 
 	compareList = []
 	sleep = SLEEP
@@ -522,18 +467,10 @@ def compareToVideo(videoList, scoreList, zeroPoint, compareStart, compareEnd):
 	return compareList
 
 
-
-# int, int, int, int, int verify(list)
-#   in:     list compareList
-#   out:    int truePos
-#           int trueNeg
-#           int falsePos
-#           int falseNeg
-#           int totalCompares
-#
-# Counts verification statistics in comparison list.
-#
 def verify(compareList):
+	"""
+	Count verification statistics in comparison list.
+	"""
 
 	truePos   = trueNeg  = 0
 	falsePos  = falseNeg = 0
@@ -562,16 +499,11 @@ def verify(compareList):
 	return truePos, trueNeg, falsePos, falseNeg, totalCompares
 
 
-
-# int, int calcSunsetSunrise(string)
-#   in:     string dateStr
-#   out:    int sunset
-#           int sunrise
-#
-# Uses astral module to calculate number of minutes from midnight
-# on given date to sunset and following sunrise.
-#
 def calcSunsetSunrise(date):
+	"""
+	Use astralmod.py to calculate numer of minutes from midnight
+	on a given date to sunset and following sunrise.
+	"""
 
 	a = Astral()
 	a.solar_depression = "civil"
@@ -594,18 +526,12 @@ def calcSunsetSunrise(date):
 	return sunset, sunrise
 
 
-
-# list, int, int trimData(list)
-#   in:     list inputList
-#   out:    list inputList
-#           int startTrim
-#           int endTrim
-#
-# Counts runs of zeroes at start and end of inputList, ignoring first/last 30 
-# minutes and ignoring 2 minute activity bouts. If there are more than some
-# threshold of zeroes, trims the list.
-#
 def trimData(inputList):
+	"""
+	Count runs of zeroes at start and end of input list, ignoring first and 
+	last 30 minutes and intermittent 2 minute activity bouts. If there are
+	more than 300 zeroes, return the amount to trim.
+	"""
 
 	# will trim the list if there are more than threshold 0's at start
 	threshold = 300
@@ -641,14 +567,10 @@ def trimData(inputList):
 	return inputList, startTrim, endTrim
 
 
-
-# int monthToNum(string)
-#   in:     string month
-#   out:    int num
-#
-# Converts a string calender month to numerical value.
-#
 def monthToNum(month):
+	"""
+	Convert a calender month string to its numerical value.
+	"""
 
 	mon = month.lower()
 	if mon in ["jan", "january"]:
@@ -679,14 +601,10 @@ def monthToNum(month):
 		return -1
 
 
-
-# string numToMonth(int)
-#   in:     int num
-#   out:    string month
-#
-# Converts numerical month to string month abbreviation.
-#
 def numToMonth(num):
+	"""
+	Convert numerical month to string month abbreviation.
+	"""
 
 	month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 	if num in range(1, 13):
@@ -695,17 +613,11 @@ def numToMonth(num):
 		return "error"
 
 
-
-# list getDates(list, int, list)
-#   in:     list startDate
-#           int startTrim
-#           list inputList
-#   out:    list dateList
-#
-# Returns a list of string dates covered by inputList, using startDate as the 
-# date of the first minute, and excluding days trimmed by startTrim
-#
 def getDates(currDate, startTrim, inputList):
+	"""
+	Return a list of datetime.datetime objects that span the input list,
+	skipping past the start trim.
+	"""
 
 	dateList = []
 	currDate += datetime.timedelta(days = startTrim//1440)
@@ -721,15 +633,11 @@ def getDates(currDate, startTrim, inputList):
 	return dateList
 
 
-
-# string clock(int)
-#   in:     int minutes
-#   out:    string clock
-#
-# Converts a number of minutes to a string containing 24 hour clock time in
-# format HH:MM:SS
-#
 def clock(minutes):
+	"""
+	Converts a number of minutes to a string containing 24 hour clock time in
+	format HH:MM:SS
+	"""
 	hour = str((minutes//60)%24)
 	minute = minutes%60
 	if minute < 10:
@@ -741,111 +649,32 @@ def clock(minutes):
 	else: return str(int(hour)*60 + int(minute))
 
 
-
-# int minutes(string)
-#   in:     string clock
-#   out:    int minutes
-#
-# Converts a string containing a 24 hour clock time of format HH:MM:SS or HH:MM
-# to a number of minutes after midnight.
-#
 def minutes(t):
+	"""
+	Convert a datetime.time object into a number of minutes from midnight.
+	"""
 	clock = [t.hour, t.minute]
-	if len(clock) == 2:
-		return sum( [a*b for a,b in zip( [60, 1], map(int, clock) )] )
-	elif len(clock) == 3:
-		return sum( [a*b for a,b in zip( [60, 1, 0], map(int, clock) )] )
-	else:
-		return -1
+	return sum([ a*b for a, b in zip( [60, 1], map(int, clock) ) ])
 
 
-
-# boolean isValidDir(string)
-#   in:     string dirName
-#   out:    boolean valid
-#
-# Returns whether or not a string contains characters that render it an
-# invalid directory name.
-#
 def isValidDir(dirName):
+	"""
+	Return whether a string contains characters that render it an
+	invalid directory name.
+	"""
 	badChars = [ "<",">",":","|","?","*","\"" ]
 	invalid = [char for char in badChars if char in dirName]
 	return invalid
 
 
-
-# void showSplash()
-#   in:     none
-#   out:    none
-#
-# Prints out the program name, current version, copyright information,
-# and other relevant information.
-#
-def showSplash():
-	print("Actigraphy Sleep Variable Analysis | Version " + VERSION)
-	print("Developed by Matt Ragoza and Mario Pongibove")
-	print("Copyright 2015 Cameron Lab, University of Pittsburgh\n")
-
-
-# string, list getCommand()
-#   in:     none
-#   out:    string command
-#           list arguments
-#
-# Gets a list of strings separated by white space from command line input,
-# groups together strings that were surrounded by quotation marks "", and
-# adds these strings to argument list. The first argument is returned as
-# the command, the following are the arguments.
-#
-def getCommand():
-
-	# Get user input and split strings by whitespace
-	print(PROMPT, end="")
-	line = input().replace('\n', '')
-	pre = list(filter(None, line.split(" ")))
-	if len(pre) == 0: return []
-
-	inString = False
-	builder = []
-	string = ""
-	arguments = []
-	
-	# Add single strings and "grouped strings" to arguments list
-	for arg in pre:
-
-		if arg[0] == '\"':
-			inString = True
-
-		if inString:
-			builder.append(arg)
-		else:
-			arguments.append(arg)
-
-		if arg[len(arg)-1] == '\"':
-			inString = False
-
-			for s in builder:
-				string += (s+" ")
-
-			arguments.append(string[1:-2])
-			builder = []
-			string = ""
-
-	return arguments
-
-
-
-# void commandHelp(list)
-#   in:     list arguments
-#   out:    none
-#
-# Prints all recognized commands, their argument format, and their functionality.
-#
 def commandHelp(arguments):
+	"""
+	Print a help message for with command usage.
+	"""
 	print("Commands:\n")
 	print("\toptions\t\tDisplay current option settings")
 	print("\tset <opt> <val>\tSet analysis options")
-	print("\tvariables\t\tDisplay variable definitions")
+	print("\tvariables\tDisplay variable definitions")
 	print("\tenable <var>\tView or add to enabled variables")
 	print("\tdisable <var>\tView or add to disabled variables")
 	print("\trun <in> <out>\tWrite analysis of input directory to output file")
@@ -857,16 +686,13 @@ def commandHelp(arguments):
 	print("\t\t-p\tprints output to console as well as to output file")
 	print("\t\t-r\toutput more readable times and subject IDs")
 	print("\tquit\t\tTerminate the program (can also use ctrl+C)\n")
+	return True
 
 
-
-# void commandOptions(list)
-#   in:     list arguments
-#   out:    none
-#
-# Prints global variables and their current settings.
-#
 def commandOptions(arguments):
+	"""
+	Print current global settings.
+	"""
 	print("Options:\n")
 	print("\tLOCALE\t\t" + str(LOCALE))
 	print("\tINPUT_TYPE\t" + str(INPUT_TYPE))
@@ -875,16 +701,13 @@ def commandOptions(arguments):
 	print("\tWAKE_CRITERIA\t" + str(WAKE_CRITERIA[0])+"/"+str(WAKE_CRITERIA[1]))
 	print("\tTRIM_ZEROES\t" + str(TRIM_ZEROES))
 	print("\tCALC_DAYLIGHT\t" + str(CALC_DAYLIGHT) + "\n")
+	return True
 
 
-
-# void commandSet(list)
-#   in:     list arguments
-#   out:    none
-#
-# Sets the value of a global variable.
-#
 def commandSet(arguments):
+	"""
+	Set the value of a global setting.
+	"""
 
 	global LOCALE
 	global INPUT_TYPE
@@ -959,23 +782,20 @@ def commandSet(arguments):
 	elif arguments[0] == "CALC_DAYLIGHT":
 		if arguments[1].lower() in TRUE:
 			CALC_DAYLIGHT = True
-			print("CALC_DAYLIGHT set to " + str(TRIM_ZEROES) + "\n")
+			print("CALC_DAYLIGHT set to " + str(CALC_DAYLIGHT) + "\n")
 		elif arguments[1].lower() in FALSE:
 			CALC_DAYLIGHT = False
-			print("CALC_DAYLIGHT set to " + str(TRIM_ZEROES) + "\n")
+			print("CALC_DAYLIGHT set to " + str(CALC_DAYLIGHT) + "\n")
 		else: print("Invalid boolean value.\n")
 
 	else: print("Option " + arguments[0] + " does not exist.\n")
+	return True
 
-
-
-# void commandVars(list)
-#   in:     list arguments
-#   out:    none
-#
-# Prints all analysis variables and their definitions.
-#
+ 
 def commandVars(arguments):
+	"""
+	Print all analysis variable definitions.
+	"""
 	print("Variables:\n")
 	print("\tsunset\t\tTime of sunset on a given date in LOCALE.")
 	print("\tsunrise\t\tTime of sunrise on a given date in LOCALE.")
@@ -996,16 +816,13 @@ def commandVars(arguments):
 	print("\tSE\t\tSleep efficiency, the percent of darkPeriod scored\n\t\t\tas sleep.")
 	print("\t24hourTST\tTotal number of minutes of sleep in a 24 hour period.")
 	print("\tNOC\t\tNocturnal sleep consolidation, percent of 24 hour\n\t\t\tsleep in darkPeriod.\n")
+	return True
 
 
-
-# void commandEnable(list)
-#   in:     list arguments
-#   out:    none
-#
-# Includes a variable in the next analysis and prints all enabled variables.
-#
 def commandEnable(arguments):
+	"""
+	Include a variable in the next analysis, and/or print all enabled variables.
+	"""
 	for var in arguments:
 		if var == "all":
 			while(DISABLED):
@@ -1020,16 +837,13 @@ def commandEnable(arguments):
 	else:
 		for var in ENABLED: print("\t"+var)
 	print("")
+	return True
 
 
-
-# void commandDisable(list)
-#   in:     list arguments
-#   out:    none
-#
-# Excludes a variable from the next analysis and prints all disabled variables.
-#
 def commandDisable(arguments):
+	"""
+	Exclude a variable from the next analysis, and/or print all disabled variables.
+	"""
 	for var in arguments:
 		if var == "all":
 			while(ENABLED):
@@ -1044,30 +858,13 @@ def commandDisable(arguments):
 	else:
 		for var in DISABLED: print("\t"+var)
 	print("")
+	return True
 
 
-
-# void commandRun(list)
-#   in:     list arguments
-#   out:    none
-#
-# Runs a batch analysis on an input directory and writes to output file(s).
-# Arguments are <flags*> <input path> <output path>
-#
-# Optional flags:
-#   -v :    Substitute variables analysis for verification, which compares
-#               minute actigraphy to videography. Outputs one .ver.csv file
-#               per night of input data in .vl.csv format.
-#   -t :    Use tab as delimiter in output files instead of comma
-#   -a :    Opens the output file/folder automatically on completion
-#   -f :    Substitute variabe analysis for .awc formatting, which outputs
-#               raw lists of minute times, activity, scores, and events.
-#               Outputs one .awc.csv file per input .awc file.
-#   -p :    Prints output to console as it writes it to file
-#   -r :    Outputs more human-readable data    
-#
 def commandRun(arguments):
-
+	"""
+	Run a batch analysis on an input directory and write output file(s).
+	"""
 	global VERIFICATION
 	global DL
 	global AUTORUN
@@ -1107,18 +904,18 @@ def commandRun(arguments):
 
 	if len(arguments) < 2:
 		print("Requires input directory and output file.\n")
-		return
+		return True
 	else:
 
 		inputDir = arguments[0]
 		if not os.path.isdir(inputDir):
 			print("Input directory not found.\n")
-			return
+			return True
 		if len(arguments) > 1: outputFile = arguments[1]
 
 		if not ENABLED and not VERIFICATION and not FORMAT_AWC:
 			print("No output variables enabled.\n")
-			return
+			return True
 
 		print("Running analysis of " + INPUT_TYPE + " files in " + os.path.abspath(inputDir))
 		print("Writing output to " + os.path.abspath(outputFile) + "\n")
@@ -1128,46 +925,70 @@ def commandRun(arguments):
 			print("Starting " + os.path.abspath(outputFile))
 			os.system( "start \"\" \"" + outputFile.replace('/','\\') + "\"" )
 		print("")
+		return True
 
 
+def lex(argument):
+	"""
+	Split string input into list of tokens, which can be delimited by double quotes.
+	"""
+	# Get user input and split strings by whitespace
+	line = argument.replace('\n', '')
+	pre = list(filter(None, line.split(" ")))
+	if len(pre) == 0: return []
 
-# void cli()
-#   in:     none
-#   out:    none
-#
-# Implements a command line interface, allowing user to enter commands
-# and arguments that modify the program's settings, input, and output
-# and then run custom analyses. Called at program launch.
-#
-def cli():
+	inString = False
+	builder = []
+	string = ""
+	arguments = []
 	
-	arguments = [""]
-	print (os.getcwd())
-	showSplash()
+	# Add single strings and "grouped strings" to arguments list
+	for arg in pre:
+		if arg[0] == '\"':
+			inString = True
+		if inString:
+			builder.append(arg)
+		else:
+			arguments.append(arg)
+		if arg[len(arg)-1] == '\"':
+			inString = False
+			for s in builder:
+				string += (s+" ")
+			arguments.append(string[1:-2])
+			builder = []
+			string = ""
 
-	#if len(sys.argv)>1:
-	#	stream = open(str(sys.argv[1]), "r")
-	#else:
-	#	stream = sys.stdin
+	return arguments
 
-	while True:
 
-		try:
-			arguments = getCommand()
- 
-			if   len(arguments) == 0: 		pass
-			elif arguments[0] == "help":    commandHelp(arguments[1:])
-			elif arguments[0] == "options": commandOptions(arguments[1:])
-			elif arguments[0] == "set":     commandSet(arguments[1:])
-			elif arguments[0] == "variables":commandVars(arguments[1:])
-			elif arguments[0] == "enable":  commandEnable(arguments[1:])
-			elif arguments[0] == "disable": commandDisable(arguments[1:])
-			elif arguments[0] == "run":     commandRun(arguments[1:])
-			elif arguments[0] == "quit":    break
-			else: print ("Command not recognized, try \"help\".\n")
+def parse(arguments):
+	"""
+	Run the command given in by argument list.
+	"""
+	if   len(arguments) == 0: return True
+	elif arguments[0] == "help":    return commandHelp(arguments[1:])
+	elif arguments[0] == "options": return commandOptions(arguments[1:])
+	elif arguments[0] == "set":     return commandSet(arguments[1:])
+	elif arguments[0] == "variables": return commandVars(arguments[1:])
+	elif arguments[0] == "enable":  return commandEnable(arguments[1:])
+	elif arguments[0] == "disable": return commandDisable(arguments[1:])
+	elif arguments[0] == "run":     return commandRun(arguments[1:])
+	elif arguments[0] == "quit":    return False
+	else:
+		print ("Command not recognized, try \"help\".\n")
+		return True
 
-		except KeyboardInterrupt: break
 
-	return
+def cli():
+	"""
+	Implement a command line interface.
+	"""
+	running = True
+	print(SPLASH)
+	while running:
+		print(PROMPT, end="")
+		running = parse(lex(input()))
 
-if __name__ == "__main__" : cli()
+
+if __name__ == "__main__":
+	cli()
