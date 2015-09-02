@@ -2,24 +2,26 @@
 # version 1 as of 9/12/14
 # written by Matt Ragoza
 
+import asva
 import sys
+import os
 import platform
 import csv
-import os
 import glob
+import re
 import time
 import math
 import datetime
-import pytz
-import astral
-from astral import Astral
-reload(astral)
 
 CLEAR = ('clear', 'cls')[bool(platform.system() == 'Windows')]
-SPRING_LIST = [ "2-Apr-2000", "1-Apr-2001", "7-Apr-2002", "6-Apr-2003", "4-Apr-2004", "3-Apr-2005", "2-Apr-2006", "11-Mar-2007", "9-Mar-2008", "8-Mar-2009", "14-Mar-2010", "13-Mar-2011", "11-Mar-2012", "10-Mar-2013", "9-Mar-2014", "8-Mar-2015", "13-Mar-2016", "12-Mar-2017", "11-Mar-2018", "10-Mar-2019" ]
-FALL_LIST   = [ "29-Oct-2000", "28-Oct-2001", "27-Oct-2002", "26-Oct-2003", "31-Oct-2004", "30-Oct-2005", "29-Oct-2006", "4-Nov-2007", "2-Nov-2008", "1-Nov-2009", "7-Nov-2010", "6-Nov-2011", "4-Nov-2012", "3-Nov-2013", "2-Nov-2014", "1-Nov-2015", "6-Nov-2016", "5-Nov-2017", "4-Nov-2018", "3-Nov-2019" ]
+SPRING_LIST = "2-Apr-2000 1-Apr-2001 7-Apr-2002 6-Apr-2003 4-Apr-2004 3-Apr-2005 2-Apr-2006 11-Mar-2007 \
+				9-Mar-2008 8-Mar-2009 14-Mar-2010 13-Mar-2011 11-Mar-2012 10-Mar-2013 9-Mar-2014 8-Mar-2015 \
+				13-Mar-2016 12-Mar-2017 11-Mar-2018 10-Mar-2019".split()
+FALL_LIST   = "29-Oct-2000 28-Oct-2001 27-Oct-2002 26-Oct-2003 31-Oct-2004 30-Oct-2005 29-Oct-2006 4-Nov-2007 \
+				2-Nov-2008 1-Nov-2009 7-Nov-2010 6-Nov-2011 4-Nov-2012 3-Nov-2013 2-Nov-2014 1-Nov-2015 \
+				6-Nov-2016 5-Nov-2017 4-Nov-2018 3-Nov-2019".split()
 
-def main():
+def prompt():
 	
 	os.system(CLEAR)
 
@@ -28,25 +30,23 @@ def main():
 	
 	# Prompt user for input directory
 	print("\n--- DST PREPROCESSOR FOR AWC FILES ---\n")
-	inDir = raw_input("Enter the directory with activity files: ")
-	if not os.path.isdir(inDir):
+	print("Enter the directory with activity files:")
+	inDir = asva.getCommand(sys.stdin)
+	if not inDir or not os.path.isdir(inDir[0]):
 		print("Couldn't find that directory.")
 		return
 
 	# Prompt user for output directory
-	outDir = raw_input("Name the output directory: ")
-	if outDir is "":
-		outDir = "."
-	if not is_valid_dir(outDir):
-		print("Invalid directory.")
+	print("Name the output directory:")
+	outDir = asva.getCommand(sys.stdin)
+	if not outDir or not asva.isValidDir(outDir[0]):
+		print("Invalid output directoty")
 		return
-
-	# Find or create the output directory
-	if not os.path.isdir(outDir):
-		os.makedirs(outDir)
+	if not os.path.isdir(outDir[0]):
+		os.makedirs(outDir[0])
 	
 	# Call the main sleep scoring function
-	find_dst_transitions(inDir, outDir)
+	find_dst_transitions(inDir[0], outDir[0])
 
 
 
@@ -258,18 +258,11 @@ def calc_sunset_sunrise(dateStr):
 
 	return sunset, sunrise
 
-
-def is_valid_dir(dir):
-	badChars = ["<",">",":","|","?","*","\""]
-	invalid = [c for c in badChars if c in dir]
-	return not invalid
-
-
 def month_to_num(month):
 	mon = month.lower()
 	if mon in ["jan", "january"]:
 		return 1
-	elif mon in ["feb", "febr" "february"]:
+	elif mon in ["feb", "febr", "february"]:
 		return 2
 	elif mon in ["mar", "march"]:
 		return 3
@@ -296,17 +289,18 @@ def month_to_num(month):
 
 
 def num_to_month(num):
-	months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
 	if num in range(1, 13):
+		print num
 		return months[num-1]
 	else:
 		return "error"
 
+def rep():
+	while True:
+		prompt()
+		if not raw_input("\nAgain? ").lower() in ["yes", "y"]:
+			os.system(CLEAR)
+			break
 
-# Program loop
-while True:
-	main()
-	time.sleep(0.2)
-	if not raw_input("\nAgain? ").lower() in ["yes", "y", "ok"]:
-		os.system(CLEAR)
-		break
+if __name__ == "__main__": rep()
