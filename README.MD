@@ -1,6 +1,5 @@
 #ASVA | Actigraphy Sleep Variable Analysis
-
-###Cameron Lab at the University of Pittsburgh
+Cameron Lab at the University of Pittsburgh
 
 -------------------------------------------------------------------
 
