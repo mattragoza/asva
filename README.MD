@@ -1,14 +1,15 @@
-ASVA | Actigraphy Sleep Variable Analysis
+#ASVA | Actigraphy Sleep Variable Analysis
 
-Cameron Lab at the University of Pittsburgh
+###Cameron Lab at the University of Pittsburgh
 
 -------------------------------------------------------------------
 
-Requirements
+##Requirements
 
  - Python 3
  - Python packages ephem and pytz
-Usage
+
+##Usage
 
  - run from the command line as follows:
 
