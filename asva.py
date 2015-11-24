@@ -7,93 +7,131 @@ import pytz
 import ephem
 
 DELIMITER = ','
-AWC_COL_ORDER = ['id_', 'datetime', 'date', 'time', 'activity',
-                 'state', 'transition']
-VAR_COL_ORDER = ['id_', 'date',
-                 'light_start', 'sleep_end', 'TWAK',
-                 'light_end', 'sleep_start', 'SOL']
 
-SLEEP_M = 's'
-WAKE_M  = 'w'
-NONE_M = None
+# rearrange the order of these lists to modify the order of
+# columns in the output csv
+AWC_COL_ORDER = ['id_', 'datetime', 'activity', 'state', 'transition']
+VAR_COL_ORDER = ['id_', 'date', 'light_start', 'light_end',
+                 'sleep_end', 'sleep_start', 'TWAK', 'SOL',
+                 'dark_period', 'sleep_period',
+                 'date_TST', 'dark_TST', 'sleep_TST',
+                 'SE', 'NOC']
 
-SLEEP_T = 'asleep'
-WAKE_T = 'wake up'
-NONE_T = ''
-
-ACTIGRAM = False
-ACT_SYMBOL = '='
-ACT_UNIT = 10
+SLEEP_MIN = 's'
+WAKE_MIN  = 'w'
+SLEEP_TRANS = 's'
+WAKE_TRANS = 'w'
+MISSING_DATA = 'null' # what to write
 
 CALC_DAYLIGHT = True
-# 709 New Texas Rd, Pittsburgh, PA 15213
-LOCATION = {'latitude':'40.45', 'longitude':'-79.17', 'timezone':'US/Eastern', 'elevation':361.74}
+LOCATION = {'latitude': '40.45',
+            'longitude': '-79.17',
+            'timezone': 'US/Eastern',
+            'elevation': 361.74}
 
-class Count:
+def main(argv=sys.argv[1:]):
 
-    def __init__(self, val):
-        self.val = int(val)
+    settings = parse_args(argv)
 
-    def __repr__(self):
-        if ACTIGRAM:
-            return ACT_SYMBOL * (self.val//ACT_UNIT)
-        else:
-            return str(self.val)
+    if settings.file_pattern is not None:
+        files = glob.glob(settings.file_pattern)
+    else:
+        files = [line.strip() for line in sys.stdin]
+
+    try:
+        out = open(settings.output, 'w')
+    except IOError:
+        print('error: could not access the output file', file=sys.stderr)
+        return 1
+    except TypeError:
+        out = sys.stdout
+
+    awc_data = ActigraphyDatabase(files, settings.threshold, settings.criteria)
+
+    print(awc_data, file=out)
+    out.close()
+
+    return 0
+
+def parse_args(argv):
+
+    parser = argparse.ArgumentParser(
+        prog=__file__,
+        description='Actigraphy sleep variable analysis tool.',
+        epilog=None)
+    parser.add_argument('file_pattern')
+    parser.add_argument('--threshold', '-t', type=float)
+    parser.add_argument('--criteria', '-c', type=str)
+    parser.add_argument('--output', '-o', type=str)
+
+    if not sys.stdin.isatty():
+        argv.insert(0, None)
+    return parser.parse_args(argv)
 
 
 class AWC:
 
-    """
-    A representation of a columnar actigraphy data file, which contains
-    an 11-row header followed by minute-by-minute actigraphy.
-    """
+    '''Wrapper for a columnar actigraphy data file, which contains
+    an 11-row header followed by minute actigraphy data.'''
 
-    def __init__(self, filepath, read=True, given=None):
+    def __init__(self, file_):
 
-        self.source = filepath
+        self.source = file_
         self.index = 0
 
-        if read:
-            self.original = True
-            stream = open(filepath, "r")
-            header = [next(stream).strip('\n') for i in range(11)]
-            counts = [count.strip('M\n') for count in stream]
-            stream.close()
-            
-            self.id_ = header[0]
-            self.start_dt = dt.datetime.strptime(header[1] + ' ' + header[2], '%d-%b-%Y %H:%M')
-            self.activity = [Count(val) for val in counts]
+        with open(file_, "r") as fp:
+
+            # parse the first 11 lines as header info
+            header = [next(fp).strip('\n') for _ in range(11)]           
+            self.id_ = header[0] or None
+            self.start_dt = dt.datetime.strptime(\
+                header[1] + ' ' + header[2], '%d-%b-%Y %H:%M')
+
+            # the rest of the file contains activity counts
+            self.activity = [int(c.strip('M\n')) for c in fp]
             self.state = None
             self.transition = None
 
-        else:
-            self.original = False
-            self.id_        = given['id_']
-            self.start_dt   = given['start_dt']
-            self.activity   = given['activity']
-            self.state      = given['state']
-            self.transition = given['transition']
+            self.end_dt = self.itodt(len(self))
 
-    def score(self, threshold): # Cole Kripke algorithm
+    def score(self, threshold):
 
-        state = [NONE_M] * len(self)
-        mult  = [0.04, 0.2, 1.0, 0.2, 0.04]
+        '''Uses Cole-Kripke algorithm to classify minutes as sleep or
+        wake, by first applying a smoothing function and then comparing 
+        to a threshold.'''
+
+        if threshold is None:
+            threshold = 1.0
+
+        self.state = [None] * len(self)
+        wt = [0.04, 0.2, 1.0, 0.2, 0.04]
 
         for i in range(2, len(self)-2):
 
-            sum_activity = sum([m * a.val for m, a in zip(mult, self.activity[i-2:i+3])])
+            # weighted sum of a 5 minute window around current minute
+            act_sum = sum([m*a for m, a in zip(wt, self.activity[i-2:i+3])])
 
-            if sum_activity <= threshold:
-                state[i] = SLEEP_M
+            # threshold check
+            if act_sum <= threshold:
+                self.state[i] = SLEEP_MIN
             else:
-                state[i] = WAKE_M
+                self.state[i] = WAKE_MIN
 
-        self.state = state
+        return self.state
 
     def find_periods(self, criteria):
 
-        criteria = [int(c) for c in criteria.split('/')]
-        transition = [NONE_T] * len(self)
+        '''Finds transitions between sleep and wake states as defined by
+        the criteria argument, which says that a transition to sleep while
+        awake occurs in a given minute if at least <criteria numerator>
+        minutes in the next <criteria denominator> minute window were
+        scored as sleep minutes, and vice versa.'''
+
+        if criteria is None:
+            criteria = '9/10'
+
+        criteria = [int(i) for i in criteria.split('/')]
+        self.transition = [None] * len(self)
         asleep = True
         awake  = True
         num_sleep = 0
@@ -101,316 +139,245 @@ class AWC:
         for i in range(len(self) - criteria[1]):
 
             # front of sliding window adds to tally
-            if self.state[i] is SLEEP_M:
+            if self.state[i] == SLEEP_MIN:
                 num_sleep += 1
-            elif self.state[i] is WAKE_M:
+            elif self.state[i] == WAKE_MIN:
                 num_wake += 1
 
             # rear of sliding window subtracts from tally
             if i >= criteria[1]:
-                if self.state[i - criteria[1]] is SLEEP_M:
+                if self.state[i - criteria[1]] == SLEEP_MIN:
                     num_sleep -= 1
-                elif self.state[i - criteria[1]] is WAKE_M:
+                elif self.state[i - criteria[1]] == WAKE_MIN:
                     num_wake -= 1
-
-            # don't find transitions on minutes with no sleep/wake state
-            if not self.state[i - criteria[1] + 1]:
-                continue
 
             if asleep and num_wake >= criteria[0]:
                 asleep = False
                 awake  = True
-                transition[i - criteria[1] + 1] = WAKE_T
+                self.transition[i - criteria[1] + 1] = WAKE_TRANS
             elif awake and num_sleep >= criteria[0]:
                 asleep = True
                 awake  = False
-                transition[i - criteria[1] + 1] = SLEEP_T
+                self.transition[i - criteria[1] + 1] = SLEEP_TRANS
 
-        self.transition = transition
+        return self.transition
 
-    def datetime(self, i):
+    def itodt(self, i):
+
+        '''Returns the datetime at a given number of minutes from
+        the start of the awc file. Does NOT throw IndexError.'''
+
         return self.start_dt + dt.timedelta(minutes=i)
 
     def date_range(self):
 
-        end_date = self.datetime(len(self))
-        num_dates = round((end_date - self.start_dt).total_seconds()/(24*3600))
-        return ((self.start_dt + dt.timedelta(days=x)).date()
-                for x in range(num_dates+1))
+        '''Returns an inclusive list of dates that are represented
+        in this file, ie. not necessarily in their entirety.'''
 
-    def __iter__(self):
-        self.index = 0
-        return self
-
-    def __next__(self):
-        try:
-            row = self[self.index]
-            self.index += 1
-        except IndexError:
-            raise StopIteration
-        return row
-
-    def __str__(self):
-        s = self.source + '\n'
-        for l in AWC_COL_ORDER:
-            s += l + DELIMITER
-        s += '\n'
-        for row in self:
-            row.label = False
-            s += repr(row)
-            row.label = True
-        return s
-
-    def __repr__(self):
-        if self.original:
-            return self.source
-        else:
-            return str(self)
+        num_dates = (self.end_dt-self.start_dt).total_seconds()//(24*3600)
+        return [(self.start_dt+dt.timedelta(days=n)).date() \
+                for n in range(int(num_dates) + 1)]
 
     def __len__(self):
+
+        '''The number of minutes of actigraphy covered by this AWC file.'''
         return len(self.activity)
 
-    def __getitem__(self, i):
 
-        """
-        The AWC object is abstractly represented as a table of minute
-        data. Indexing the object returns a row of single minute values,
-        and either integer indices or datetimes (and ranges) can be used.
-        """
+class ActigraphyDatabase:
 
-        end_dt = self.datetime(len(self))
+    '''An interface for applying functions to and computing variables
+    for multiple AWC objects.'''
 
-        if isinstance(i, int):
-            if not i in range(len(self)):
-                raise IndexError('list index out of range')
-            cols = {}
-            cols['id_'] = self.id_
-            curr_dt = self.datetime(i)
-            cols['datetime'] = curr_dt
-            cols['date'] = curr_dt.date()
-            cols['time'] = curr_dt.time()
-            cols['activity'] = self.activity[i]
-            if self.state: cols['state'] = self.state[i]
-            if self.transition: cols['transition'] = self.transition[i]
-            row = self.AWCRow(cols)
+    def __init__(self, files, threshold, criteria):
 
-        elif isinstance(i, str):
-            find_dt = dt.datetime.strptime(i, '%Y-%m-%d %H:%M')
-            if find_dt >= self.start_dt and find_dt < end_dt:
-                i = int((find_dt - self.start_dt).total_seconds()//60)
-            else: raise IndexError('datetime index out of bounds')
-            row = self[i]
+        self.awcs = []
 
-        elif isinstance(i, slice):
-            start = i.start
-            stop  = i.stop
-            step  = i.step
-
-            if isinstance(start, str):
-                find_dt = dt.datetime.strptime(start, '%Y-%m-%d %H:%M')
-                if find_dt >= self.start_dt and find_dt < end_dt:
-                    start = int((find_dt - self.start_dt).total_seconds()//60)
-                else: raise IndexError('start datetime out of bounds')
-
-            if isinstance(stop, str):
-                find_dt = dt.datetime.strptime(stop, '%Y-%m-%d %H:%M')
-                if find_dt >= self.start_dt and find_dt < end_dt:
-                    stop = int((find_dt - self.start_dt).total_seconds()//60)
-                else: raise IndexError('stop datetime out of bounds')
-            
-            data = {}
-            data['id_'] = self.id_
-            data['start_dt'] = self.datetime(start)
-            data['activity'] = self.activity[start:stop]
-            if self.state: data['state'] = self.state[start:stop]
-            else: data['state'] = None
-            if self.transition: data['transition'] = self.transition[start:stop]
-            else: data['transition'] = None
-            row = AWC(filepath=self.source, read=False, given=data)
-
-        return row
-
-    class AWCRow:
-
-        """
-        Represents a single minute observation from the parent actigraphy
-        data. The column values are stored in a dictionary and printed
-        out by the order found in the COL_ORDER list.
-        """
-
-        def __init__(self, cols):
-            self.cols = cols
-            self.label = True
-
-        def __len__(self):
-            return len(self.cols)
-
-        def __getitem__(self, i):
-            return self.cols[i]
-            
-        def __repr__(self):
-            s = ""
-            if self.label:
-                for name in AWC_COL_ORDER:
-                    s += name + DELIMITER
-                s += '\n'
-            for v in AWC_COL_ORDER:
-                s += str(self[v]) + DELIMITER
-            return s + '\n'
-
-    # below are some basic conditions for filtering
-
-    def has_datetime(self, dt):
-
-        try: return self[dt]
-        except IndexError:
-            return False
-
-    def is_id(self, id_):
-        return self.id_ == id_
-
-
-
-class Frame:
-
-    """
-    A simple data structure for applying filters and functions
-    to multiple AWC file objects.
-    """
-
-    def __init__(self, awcs):
-
-        self.awcs = awcs
-        self.vars_ = []
-
-    def filter(self, by, args=None):
-
-        res = Frame([awc for awc in self.awcs if by(awc, args)])
-        return res
-
-    def score(self, threshold):
-
-        for awc in self.awcs:
+        for file_ in files:
+            awc = AWC(file_)
             awc.score(threshold)
-
-    def find_periods(self, criteria):
-
-        for awc in self.awcs:
             awc.find_periods(criteria)
+            self.awcs.append(awc)
 
+        self._compute_variables()
 
+    def _compute_variables(self):
 
-    def compute_variables(self): # let's try to do this in ONE pass
-
-        vars_ = []
+        self.vars = []
         for awc in self.awcs:
 
             # minute-offset of AWC start time from 0:00:00 on start date
-            start_offset = 60*awc.start_dt.hour + 1*awc.start_dt.minute
-            day_i = 0
-            end_dt = awc.datetime(len(awc)) 
+            start_offset = awc.start_dt.hour * 60 + awc.start_dt.minute
+            test_sleep_tst = 0
 
-            for date in awc.date_range():
+            # for each date in the awc file
+            for date_index, date in enumerate(awc.date_range()):
 
+                # potentially we need to calculate all sleep variables
                 light_start, light_end = light_period(date)
-                last_asleep, last_awake = None, None
+                dark_period = None
                 sleep_start, sleep_end = None, None
-                SOL, TWAK = None, None
+                sleep_period = None
+                sol, twak = None, None
+                date_tst, dark_tst = 0, 0
+                se, noc = None, None
 
-                for i in range(1440):
+                row = dict()
+                row['id_'] = awc.id_
+                row['date'] = date
+                row['sleep_period'] = None
+                row['dark_period'] = None
+                row['sleep_TST'] = None
+                row['dark_TST'] = None
+                row['NOC'] = None
+                row['SE'] = None
 
-                    try: # to look at minute i of current date
-                        curr = awc[day_i + (i-start_offset)]
+                # iterate thru the lines in awc that WOULD cover that date
+                # there are 1440 lines (minutes) per date
+                for i in range(date_index * 1440 - start_offset,
+                    (date_index + 1) * 1440 - start_offset):
 
-                        if awc.start_dt <= light_start and curr['transition'] is WAKE_T:
-                            test_TWAK = min_diff(curr['datetime'], light_start)
-                            if not sleep_end or abs(test_TWAK) < abs(TWAK):
-                                sleep_end = curr['datetime']
-                                TWAK = test_TWAK
+                    # get the datetime from the line index
+                    curr_dt = awc.itodt(i)
 
-                        elif light_end < end_dt and curr['transition'] is SLEEP_T:
-                            test_SOL = min_diff(light_end, curr['datetime'])
-                            if not sleep_start or abs(test_SOL) < abs(SOL): # something wrong with this?
-                                sleep_start = curr['datetime']
-                                SOL = test_SOL
+                    try:
 
-                    except IndexError: continue
+                        # if this date's light start is in the awc
+                        # and we found a wake transition,
+                        if (awc.start_dt <= light_start
+                            and awc.transition[i] == WAKE_TRANS):
 
+                            test_twak = min_diff(curr_dt, light_start)
+
+                            # if we haven't marked anything as the
+                            # end of sleep period yet, or the wake 
+                            # is closer to light start than previous wake,
+                            if (sleep_end is None
+                                or abs(test_twak) < abs(twak)):
+
+                                # mark that minute as end of sleep period
+                                # and adjust TWAK to reflect this
+                                sleep_end = curr_dt
+                                twak = test_twak
+
+                        # else if this date's light end is in the awc
+                        # and we found a sleep transition,
+                        elif (light_end < awc.end_dt
+                            and awc.transition[i] == SLEEP_TRANS):
+
+                            test_sol = min_diff(light_end, curr_dt)
+
+                            # if we haven't marked anything as the
+                            # start of sleep period yet, or the sleep
+                            # is closer to light end than previous sleep,
+                            if (sleep_start is None 
+                                or abs(test_sol) < abs(sol)):
+
+                                # mark that minute as start of sleep period
+                                # and adjust SOL to reflect this
+                                sleep_start = curr_dt
+                                sol = test_sol
+
+                        # count total sleep time
+                        if awc.state[i] == SLEEP_MIN:
+                            date_tst += 1
+                            if curr_dt < light_start or curr_dt >= light_end:
+                                dark_tst += 1
+
+                    except IndexError:
+                        # if the awc has any start offset, IndexErrors will
+                        # be raised due to negative indices, so don't break
+                        # just keep going until reaching valid indices
+                        continue
+
+                try:
+                    # if there is a previous date, calculate its dark period
+                    # and sleep period variables
+                    prev = self.vars[-1]
+                    if prev['id_'] != awc.id_ \
+                        or date != prev['date'] + dt.timedelta(days=1):
+                        raise IndexError()
+
+                    prev_light_end = dt.datetime.combine(
+                            prev['date'], prev['light_end'])
+                    prev['dark_period'] = min_diff(prev_light_end, light_start)
+
+                    prev_sleep_start = dt.datetime.combine(
+                            prev['date'], prev['sleep_start'])
+                    prev['sleep_period'] = min_diff(prev_sleep_start,sleep_end)
+                    
+                    prev_sleep_tst = 0
+                    sleep_start_i = min_diff(awc.start_dt, \
+                        dt.datetime.combine(prev['date'], prev['sleep_start']))
+                    sleep_end_i = min_diff(awc.start_dt, sleep_end)
+                    for i in range(sleep_start_i, sleep_end_i):
+                        try:
+                            if awc.state[i] == SLEEP_MIN:
+                                prev_sleep_tst += 1
+                        except IndexError:
+                            continue
+
+                    prev_dark_tst = 0
+                    dark_start_i = min_diff(awc.start_dt, \
+                        dt.datetime.combine(prev['date'], prev['light_end']))
+                    dark_end_i = min_diff(awc.start_dt, light_start)
+                    for i in range(dark_start_i, dark_end_i):
+                        try:
+                            if awc.state[i] == SLEEP_MIN:
+                                prev_dark_tst += 1
+                        except IndexError:
+                            continue
+
+                    prev['sleep_TST'] = prev_sleep_tst
+                    prev['dark_TST'] = prev_dark_tst
+                    prev['NOC'] = prev_sleep_tst/float(prev['date_TST'])
+                    prev['SE'] = prev_dark_tst/float(prev['dark_period'])
+
+                except (IndexError, TypeError) as e:
+                    pass
                 
-                if light_start: light_start = light_start.time()
-                if light_end: light_end = light_end.time()
-                if sleep_start: sleep_start = sleep_start.time()
-                if sleep_end: sleep_end = sleep_end.time()
+                if light_start:
+                    light_start = light_start.time()
+                if light_end:
+                    light_end = light_end.time()
+                if sleep_start:
+                    sleep_start = sleep_start.time()
+                if sleep_end:
+                    sleep_end = sleep_end.time()               
 
-                vars_.append(self.VarRow({
-                    'id_':awc.id_,
-                    'date':date,
-                    'light_start':light_start,
-                    'light_end':light_end,
-                    'sleep_start':sleep_start,
-                    'sleep_end':sleep_end,
-                    'SOL':SOL,
-                    'TWAK':TWAK
-                    }))
+                row['light_start'] = light_start
+                row['light_end'] = light_end
+                row['sleep_start'] = sleep_start
+                row['sleep_end'] = sleep_end
+                row['SOL'] = sol
+                row['TWAK'] = twak
+                row['date_TST'] = date_tst
 
-                day_i += 1440
-      
-        self.vars_ = vars_
-
-    class VarRow:
-
-        def __init__(self, cols):
-            self.cols = cols
-
-        def __len__(self):
-            return len(self.cols)
-
-        def __getitem__(self, i):
-            return self.cols[i]
-            
-        def __repr__(self):
-            s = ""
-            for v in VAR_COL_ORDER:
-                s += str(self[v]) + DELIMITER
-            return s + '\n'
+                self.vars.append(row)
+        
+        return self.vars
 
     def trim_zeroes(self, edge, sequence, allow):
 
-        # TODO
-        pass
-
-    def __getitem__(self, i):
-
-        if isinstance(i, int):
-            return self.awcs[i]
-
-        elif isinstance(i, str):
-            for awc in self.awcs:
-                if i == awc.source:
-                    return awc
-            raise KeyError('does not contain an AWC from that source')
-
-    def __repr__(self):
-        s = str(len(self)) + ' .awc files\n'
-        for awc in self.awcs:
-            s += repr(awc) + '\n'
-        return s
+        raise NotImplementedError()
 
     def __str__(self):
-        s= ''
+
+        s = ''
         for i in VAR_COL_ORDER:
             s += i + DELIMITER
-        s += '\n'
-        for row in self.vars_:
-            s += repr(row)
+        for line in self.vars:
+            s += '\n'
+            for i in VAR_COL_ORDER:
+                s += str(line[i]).replace('None', MISSING_DATA) + DELIMITER
         return s
-
-    def __len__(self):
-        return len(self.awcs)
-
 
 
 def light_period(date):
+
+    '''Get the time of light start or light end on a given date.
+    Light start is sunrise or 7:00:00, whichever is earlier.
+    Light end is sunset or 19:00:00, whichever is later.'''
 
     light_start = dt.datetime.combine(date, dt.time(7, 0, 0))
     light_end = dt.datetime.combine(date, dt.time(19, 0, 0))
@@ -448,63 +415,11 @@ def light_period(date):
     
     return light_start, light_end
 
+def min_diff(dt_i, dt_f):
 
-def min_diff(dt_i, dt_f): # between 2 datetimes
+    '''Returns the minute difference between two datetimes.'''
 
-    return (dt_f - dt_i).total_seconds()//60
-
+    return int((dt_f - dt_i).total_seconds()//60)
 
 if __name__ == '__main__':
-
-    argv = sys.argv
-    parser = argparse.ArgumentParser(
-        prog=__file__,
-        description='Actigraphy sleep variable analysis tool.',
-        epilog=None)
-    parser.add_argument('FILE_PATTERN')
-    parser.add_argument('--threshold', '-t', type=float)
-    parser.add_argument('--criteria', '-c', type=str)
-    parser.add_argument('--output', '-o')
-
-    # positional arg FILE_PATTERN is required, regardless of pipe
-    if not sys.stdin.isatty(): argv.insert(1, None)
-    args = parser.parse_args(argv[1:])
-
-    if args.FILE_PATTERN: # get files matching a pattern
-        files = glob.glob(args.FILE_PATTERN)
-    else: # or get files from pipe
-        files = [f.strip() for f in sys.stdin.readlines()]
-
-    try:
-        if args.output:
-            stream = open(args.output, 'w')
-        else:
-            stream = sys.stdout
-
-        # Read input files into AWC objects and Frame them
-        print("Formatting data", file=sys.stderr)
-        data = Frame([AWC(f, read=True) for f in files])
-
-        # Score all actigraphy data
-        print("Scoring actigraphy", file=sys.stderr)
-        data.score(threshold=(1.0, args.threshold)[bool(args.threshold)])
-
-        # Use criteria to find sleep/wake transitions
-        print("Finding sleep/wake periods", file=sys.stderr)
-        data.find_periods(criteria=('9/10',args.criteria)[bool(args.criteria)])
-
-        # TODO: calculate analysis variables
-        print("Computing sleep variables", file=sys.stderr)
-        data.compute_variables()
-
-        print(str(data), file=stream)
-        stream.close()
-
-    except BrokenPipeError:
-        pass # Ignore premature end-of-pipe
-
-    except IOError as e:
-        print(e)
-
-    # Exit success
-    sys.exit(0)
+    sys.exit(main())
