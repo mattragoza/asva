@@ -1,3 +1,4 @@
+from __future__ import print_function
 import datetime as dt
 import sys
 import os
@@ -6,49 +7,48 @@ import glob
 import pytz
 import ephem
 
-DELIMITER = ','
-
 # rearrange the order of these lists to modify the order of
 # columns in the output csv
 AWC_COL_ORDER = ['id_', 'datetime', 'activity', 'state', 'transition']
-VAR_COL_ORDER = ['id_', 'date', 'light_start', 'light_end',
-                 'sleep_end', 'sleep_start', 'TWAK', 'SOL',
-                 'dark_period', 'sleep_period',
-                 'date_TST', 'dark_TST', 'sleep_TST',
-                 'SE', 'NOC']
+VAR_COL_ORDER = ['id_', 'date', 'dark_start', 'sleep_start', 'SOL',
+                 'dark_end', 'sleep_end', 'TWAK', 'dark_period', 'sleep_period',
+                 'sleep_TST', 'dark_TST', 'TST', 'WASO', 'SE', 'NOC', 'notes']
+DELIMITERS = (',', ' ') # main, module
+MISSING_VALUE = 'null'
+OMIT_PROBLEMS = True
 
 SLEEP_MIN = 's'
 WAKE_MIN  = 'w'
-SLEEP_TRANS = 's'
-WAKE_TRANS = 'w'
-MISSING_DATA = 'null' # what to write
+SLEEP_TRANS = 'S'
+WAKE_TRANS  = 'W'
 
 CALC_DAYLIGHT = True
-LOCATION = {'latitude': '40.45',
-            'longitude': '-79.17',
-            'timezone': 'US/Eastern',
-            'elevation': 361.74}
+LOCATION = {'latitude': '40.45', 'longitude': '-79.17',
+            'timezone': 'US/Eastern', 'elevation': 361.74}
 
 def main(argv=sys.argv[1:]):
 
-    settings = parse_args(argv)
+    args = parse_args(argv)
 
-    if settings.file_pattern is not None:
-        files = glob.glob(settings.file_pattern)
+    if args.file_pattern is None:
+        files = [line.rstrip() for line in sys.stdin]
     else:
-        files = [line.strip() for line in sys.stdin]
+        files = glob.glob(args.file_pattern)
 
     try:
-        out = open(settings.output, 'w')
+        out = open(args.output, 'w')
     except IOError:
-        print('error: could not access the output file', file=sys.stderr)
+        print('error: could not access output file ' + args.output, \
+            file=sys.stderr)
         return 1
     except TypeError:
         out = sys.stdout
 
-    awc_data = ActigraphyDatabase(files, settings.threshold, settings.criteria)
-
-    print(awc_data, file=out)
+    awc_data = ActigraphyDatabase(files, args.threshold, args.criteria)
+    if (awc_data.vars):
+        print(awc_data, file=out)
+    else:
+        print("error: no output to write", file=sys.stderr)
     out.close()
 
     return 0
@@ -57,15 +57,20 @@ def parse_args(argv):
 
     parser = argparse.ArgumentParser(
         prog=__file__,
-        description='Actigraphy sleep variable analysis tool.',
+        description='Actigraphy sleep variable analysis utility.',
         epilog=None)
-    parser.add_argument('file_pattern')
-    parser.add_argument('--threshold', '-t', type=float)
-    parser.add_argument('--criteria', '-c', type=str)
-    parser.add_argument('--output', '-o', type=str)
+    parser.add_argument('file_pattern', type=str, \
+        help='glob-style file pattern to get AWC files as input')
+    parser.add_argument('--threshold', '-t', type=float, default=1.0, \
+        help='activity threshold for classifying sleep and wake states in each minute; default is 1.0')
+    parser.add_argument('--criteria', '-c', type=str, default='9/10', \
+        help='ratio of states needed for a transition between sleep and wake periods; default is 9/10')
+    parser.add_argument('--output', '-o', type=str, \
+        help='The path to output sleep variables in csv format; default is stdout')
 
     if not sys.stdin.isatty():
         argv.insert(0, None)
+
     return parser.parse_args(argv)
 
 
@@ -77,15 +82,13 @@ class AWC:
     def __init__(self, file_):
 
         self.source = file_
-        self.index = 0
-
         with open(file_, "r") as fp:
 
             # parse the first 11 lines as header info
             header = [next(fp).strip('\n') for _ in range(11)]           
-            self.id_ = header[0] or None
+            self.id_ = header[0].strip() or None
             self.start_dt = dt.datetime.strptime(\
-                header[1] + ' ' + header[2], '%d-%b-%Y %H:%M')
+                header[1].strip() + ' ' + header[2].strip(), '%d-%b-%Y %H:%M')
 
             # the rest of the file contains activity counts
             self.activity = [int(c.strip('M\n')) for c in fp]
@@ -99,9 +102,6 @@ class AWC:
         '''Uses Cole-Kripke algorithm to classify minutes as sleep or
         wake, by first applying a smoothing function and then comparing 
         to a threshold.'''
-
-        if threshold is None:
-            threshold = 1.0
 
         self.state = [None] * len(self)
         wt = [0.04, 0.2, 1.0, 0.2, 0.04]
@@ -126,9 +126,6 @@ class AWC:
         awake occurs in a given minute if at least <criteria numerator>
         minutes in the next <criteria denominator> minute window were
         scored as sleep minutes, and vice versa.'''
-
-        if criteria is None:
-            criteria = '9/10'
 
         criteria = [int(i) for i in criteria.split('/')]
         self.transition = [None] * len(self)
@@ -189,187 +186,190 @@ class ActigraphyDatabase:
     '''An interface for applying functions to and computing variables
     for multiple AWC objects.'''
 
-    def __init__(self, files, threshold, criteria):
+    def __init__(self, files=None, threshold=1.0, criteria='9/10'):
 
         self.awcs = []
+        self.vars = []
 
-        for file_ in files:
-            awc = AWC(file_)
-            awc.score(threshold)
-            awc.find_periods(criteria)
-            self.awcs.append(awc)
+        if files:
+            print("Scoring actigraphy files", file=sys.stderr)
+            for file_ in files:
+                try:
+                    awc = AWC(file_)
+                except IOError:
+                    print('error: could not access input file ' + file_, file=sys.stderr)
+                    continue
+                awc.score(threshold)
+                awc.find_periods(criteria)
+                self.awcs.append(awc)
 
-        self._compute_variables()
+            print("Computing sleep variables", file=sys.stderr)
+            self._compute_variables()
 
     def _compute_variables(self):
 
         self.vars = []
         for awc in self.awcs:
 
-            # minute-offset of AWC start time from 0:00:00 on start date
-            start_offset = awc.start_dt.hour * 60 + awc.start_dt.minute
-            test_sleep_tst = 0
+            # get minute offset of the AWC start time from midnight on its start date
+            start_offset = awc.start_dt.hour*60 + awc.start_dt.minute
 
-            # for each date in the awc file
-            for date_index, date in enumerate(awc.date_range()):
+            # for each date in the AWC file,
+            for di, date in enumerate(awc.date_range()):
 
-                # potentially we need to calculate all sleep variables
-                light_start, light_end = light_period(date)
-                dark_period = None
-                sleep_start, sleep_end = None, None
-                sleep_period = None
-                sol, twak = None, None
-                date_tst, dark_tst = 0, 0
-                se, noc = None, None
-
+                # begin creating a row of sleep variables
                 row = dict()
                 row['id_'] = awc.id_
                 row['date'] = date
-                row['sleep_period'] = None
+                row['dark_end'] = None
+                row['dark_start'] = None
+                row['sleep_end'] = None
+                row['sleep_start'] = None
+                row['TWAK'] = None
+                row['SOL'] = None
                 row['dark_period'] = None
-                row['sleep_TST'] = None
                 row['dark_TST'] = None
-                row['NOC'] = None
+                row['sleep_period'] = None
+                row['sleep_TST'] = None
+                row['WASO'] = None
+                row['TST'] = None
                 row['SE'] = None
+                row['NOC'] = None
+                row['notes'] = ""
 
-                # iterate thru the lines in awc that WOULD cover that date
-                # there are 1440 lines (minutes) per date
-                for i in range(date_index * 1440 - start_offset,
-                    (date_index + 1) * 1440 - start_offset):
+                light_start, light_end = light_period(date)
+                sleep_start, sleep_end = None, None
+                SOL, TWAK = None, None
 
-                    # get the datetime from the line index
+                # compute when sleep ended and started on the current date
+                for i in range(di*1440, (di + 1)*1440):
+
+                    i -= start_offset
+                    try: awc.activity[i]
+                    except IndexError:
+                        continue
                     curr_dt = awc.itodt(i)
 
-                    try:
+                    # if light_start is in the AWC, find closest sleep_end to light_start
+                    if (awc.start_dt <= light_start and awc.transition[i] == WAKE_TRANS):
 
-                        # if this date's light start is in the awc
-                        # and we found a wake transition,
-                        if (awc.start_dt <= light_start
-                            and awc.transition[i] == WAKE_TRANS):
+                        test_TWAK = min_diff(curr_dt, light_start)
+                        if (sleep_end is None or abs(test_TWAK) < abs(TWAK)):
+                            sleep_end = curr_dt
+                            TWAK = test_TWAK
 
-                            test_twak = min_diff(curr_dt, light_start)
+                    # if light_end is in the AWC, find closest sleep_start to light_end
+                    elif (light_end < awc.end_dt and awc.transition[i] == SLEEP_TRANS):
 
-                            # if we haven't marked anything as the
-                            # end of sleep period yet, or the wake 
-                            # is closer to light start than previous wake,
-                            if (sleep_end is None
-                                or abs(test_twak) < abs(twak)):
+                        test_SOL = min_diff(light_end, curr_dt)
+                        if (sleep_start is None or abs(test_SOL) < abs(SOL)):
+                            sleep_start = curr_dt
+                            SOL = test_SOL
 
-                                # mark that minute as end of sleep period
-                                # and adjust TWAK to reflect this
-                                sleep_end = curr_dt
-                                twak = test_twak
+                # define start of the dark period and sleep period on this date
+                row['dark_start'] = light_end.time()
+                if sleep_start is not None:
+                    row['sleep_start'] = sleep_start.time()
+                    row['SOL'] = SOL
 
-                        # else if this date's light end is in the awc
-                        # and we found a sleep transition,
-                        elif (light_end < awc.end_dt
-                            and awc.transition[i] == SLEEP_TRANS):
-
-                            test_sol = min_diff(light_end, curr_dt)
-
-                            # if we haven't marked anything as the
-                            # start of sleep period yet, or the sleep
-                            # is closer to light end than previous sleep,
-                            if (sleep_start is None 
-                                or abs(test_sol) < abs(sol)):
-
-                                # mark that minute as start of sleep period
-                                # and adjust SOL to reflect this
-                                sleep_start = curr_dt
-                                sol = test_sol
-
-                        # count total sleep time
-                        if awc.state[i] == SLEEP_MIN:
-                            date_tst += 1
-                            if curr_dt < light_start or curr_dt >= light_end:
-                                dark_tst += 1
-
-                    except IndexError:
-                        # if the awc has any start offset, IndexErrors will
-                        # be raised due to negative indices, so don't break
-                        # just keep going until reaching valid indices
-                        continue
-
+                # try to compute sleep variables for last night
                 try:
-                    # if there is a previous date, calculate its dark period
-                    # and sleep period variables
                     prev = self.vars[-1]
-                    if prev['id_'] != awc.id_ \
-                        or date != prev['date'] + dt.timedelta(days=1):
-                        raise IndexError()
+                    prev_ok = True
 
-                    prev_light_end = dt.datetime.combine(
-                            prev['date'], prev['light_end'])
-                    prev['dark_period'] = min_diff(prev_light_end, light_start)
+                    # check that the previous variable row is from the same AWC file
+                    if prev['id_'] != row['id_'] or date != prev['date']+dt.timedelta(days=1):
+                        prev_ok = False
+                        prev['notes'] += 'END OF AWC FILE'
+                        raise ValueError()
 
-                    prev_sleep_start = dt.datetime.combine(
-                            prev['date'], prev['sleep_start'])
-                    prev['sleep_period'] = min_diff(prev_sleep_start,sleep_end)
-                    
-                    prev_sleep_tst = 0
-                    sleep_start_i = min_diff(awc.start_dt, \
-                        dt.datetime.combine(prev['date'], prev['sleep_start']))
-                    sleep_end_i = min_diff(awc.start_dt, sleep_end)
-                    for i in range(sleep_start_i, sleep_end_i):
-                        try:
-                            if awc.state[i] == SLEEP_MIN:
-                                prev_sleep_tst += 1
+                    # determine the length of last night's dark period
+                    prev_dark_start  = dt.datetime.combine(prev['date'], prev['dark_start'])
+                    prev['dark_end'] = light_start.time()
+                    prev['dark_period']  = min_diff(prev_dark_start, light_start)
+
+                    # check that last night's sleep period can be established
+                    if not (sleep_end and prev['sleep_start']):
+                        prev['notes'] += 'UNDEFINED SLEEP PERIOD'
+                        raise ValueError()
+
+                    # define the end time and length of last night's sleep period
+                    prev_sleep_start = dt.datetime.combine(prev['date'], prev['sleep_start'])
+                    prev['TWAK'] = TWAK
+                    prev['sleep_end'] = sleep_end.time()
+                    prev['sleep_period'] = min_diff(prev_sleep_start, sleep_end)
+
+                    # count sleep minutes from previous noon to current noon
+                    TST, dark_TST, sleep_TST = 0, 0, 0
+                    for i in range((2*di - 1)*720, (2*di + 1)*720):
+
+                        i -= start_offset
+                        try: curr_state = awc.state[i]
                         except IndexError:
                             continue
+                        curr_dt = awc.itodt(i)
 
-                    prev_dark_tst = 0
-                    dark_start_i = min_diff(awc.start_dt, \
-                        dt.datetime.combine(prev['date'], prev['light_end']))
-                    dark_end_i = min_diff(awc.start_dt, light_start)
-                    for i in range(dark_start_i, dark_end_i):
-                        try:
-                            if awc.state[i] == SLEEP_MIN:
-                                prev_dark_tst += 1
-                        except IndexError:
-                            continue
+                        if curr_state == SLEEP_MIN:
+                            TST += 1
+                            if prev_dark_start <= curr_dt < light_start:
+                                dark_TST += 1
+                            if prev_sleep_start <= curr_dt < sleep_end:
+                                sleep_TST += 1
 
-                    prev['sleep_TST'] = prev_sleep_tst
-                    prev['dark_TST'] = prev_dark_tst
-                    prev['NOC'] = prev_sleep_tst/float(prev['date_TST'])
-                    prev['SE'] = prev_dark_tst/float(prev['dark_period'])
 
-                except (IndexError, TypeError) as e:
+                    # define the rest of sleep variables for last night
+                    prev['TST'] = TST
+                    prev['sleep_TST'] = sleep_TST
+                    prev['WASO'] = prev['sleep_period'] - sleep_TST
+                    prev['dark_TST'] = dark_TST
+                    prev['SE'] = dark_TST/float(prev['dark_period'])
+
+                    if TST == 0:
+                        prev['NOC'] = float("inf")
+                    else:
+                        prev['NOC'] = sleep_TST/float(prev['TST'])
+
+                    # determine faulty actigraphy monitor from sleep_TST
+                    if TST < 180 or TST >= 1080:
+                        prev['notes'] += 'ABNORMAL ACTIGRAPHY'
+                        raise ValueError()
+
+                except IndexError:
                     pass
-                
-                if light_start:
-                    light_start = light_start.time()
-                if light_end:
-                    light_end = light_end.time()
-                if sleep_start:
-                    sleep_start = sleep_start.time()
-                if sleep_end:
-                    sleep_end = sleep_end.time()               
 
-                row['light_start'] = light_start
-                row['light_end'] = light_end
-                row['sleep_start'] = sleep_start
-                row['sleep_end'] = sleep_end
-                row['SOL'] = sol
-                row['TWAK'] = twak
-                row['date_TST'] = date_tst
+                except ValueError:
+                    if OMIT_PROBLEMS:
+                        self.vars.pop()
 
+                # append the row for current date
                 self.vars.append(row)
-        
+
+        if self.vars:
+            self.vars[-1]['notes'] += 'END OF AWC FILE'
+            if OMIT_PROBLEMS:
+                self.vars.pop()
+
         return self.vars
 
-    def trim_zeroes(self, edge, sequence, allow):
+    def filter(self, condition):
 
-        raise NotImplementedError()
+        f = ActigraphyDatabase()
+        f.vars = [row for row in self.vars if condition(row)]
+        return f
 
-    def __str__(self):
+    def __repr__(self):
 
         s = ''
         for i in VAR_COL_ORDER:
+            if i == 'notes' and OMIT_PROBLEMS:
+                continue
             s += i + DELIMITER
         for line in self.vars:
             s += '\n'
             for i in VAR_COL_ORDER:
-                s += str(line[i]).replace('None', MISSING_DATA) + DELIMITER
+                if i == 'notes' and OMIT_PROBLEMS:
+                    continue
+                s += str(line[i]).replace('None', MISSING_VALUE) + DELIMITER
         return s
 
 
@@ -422,4 +422,8 @@ def min_diff(dt_i, dt_f):
     return int((dt_f - dt_i).total_seconds()//60)
 
 if __name__ == '__main__':
+    DELIMITER = DELIMITERS[0]
     sys.exit(main())
+
+else:
+    DELIMITER = DELIMITERS[1]
