@@ -24,6 +24,8 @@ WAKE_MIN  = 'w'
 SLEEP_TRANS = 'S'
 WAKE_TRANS  = 'W'
 
+LIGHT_START = '7:00:00'
+LIGHT_END = '19:00:00'
 CALC_DAYLIGHT = True
 LOCATION = {'latitude': '40.45', 'longitude': '-79.17',
             'timezone': 'US/Eastern', 'elevation': 361.74}
@@ -398,8 +400,8 @@ def light_period(date):
     Light start is sunrise or 7:00:00, whichever is earlier.
     Light end is sunset or 19:00:00, whichever is later.'''
 
-    light_start = dt.datetime.combine(date, dt.time(7, 0, 0))
-    light_end = dt.datetime.combine(date, dt.time(19, 0, 0))
+    light_start = dt.datetime.combine(date, dt.time(*map(int, LIGHT_START.split(':'))))
+    light_end = dt.datetime.combine(date, dt.time(*map(int, LIGHT_END.split(':'))))
 
     if CALC_DAYLIGHT: # compare against sunset and sunrise
 

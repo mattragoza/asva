@@ -1,0 +1,36 @@
+The file asva.py is a Python program for scoring actigraphy data.
+
+Instructions
+
+	Open a terminal program such as cmd on Windows or bash on Mac or Linux.
+	Navigate to the folder where asva.py is located on your computer
+		using the following command:
+
+		cd <path_to_directory>
+
+	Once in this folder, run the actigraphy scoring progam using one of
+		the following commands:
+
+		python asva.py <file_pattern> -o <output_file>
+		python asva.py <file_pattern> > <output_file>
+
+	The <file_pattern> argument is how you specify what AWC files you want to score.
+	The <output_file> argument is the path for the file to write the output to.
+
+	Say you want to just score one file called TEST.awc which is in the same folder
+	as asva.py, and then output it in TEST.csv. You can enter:
+
+		python asva.py TEST.awc -o TEST.csv
+
+	If you have a bunch of AWC files in a folder called "AWC files" which is in 
+	the same folder as asva.py, you could instead enter the command as:
+
+		python asva.py "AWC files\*.awc" -o TEST.csv
+
+	Note that if there are spaces or wildcard characters in a filepath, it has to be
+	enclosed in quotes. The asterick * is known as a wildcard character, and means
+	"grab every	file that matches this pattern". So in this case "AWC files\*.awc"
+	argument grabs every file in the "AWC files" directory that has the .awc extension.
+	In addition, note that filenames are case-sensitive in most operating systems.
+
+For questions, contact Matt Ragoza at mtr22@pitt.edu
