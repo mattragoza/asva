@@ -14,8 +14,7 @@ AWC_COL_ORDER = ['id_', 'datetime', 'activity', 'state', 'transition']
 VAR_COL_ORDER = ['id_', 'date', 'dark_start', 'sleep_start', 'SOL',
                  'dark_end', 'sleep_end', 'TWAK', 'dark_period', 'sleep_period',
                  'dark_TST', 'sleep_TST', 'TST', 'WASO', 'SE', 'NOC', 'notes']
-DELIMITERS = (' ', ',') # module, main
-DELIMITER = DELIMITERS[__name__ == '__main__']
+DELIMITER = (' ', ',')[__name__ == '__main__']
 MISSING_VALUE = 'null'
 OMIT_PROBLEMS = True
 
