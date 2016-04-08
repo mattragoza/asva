@@ -23,7 +23,6 @@ WAKE_MIN  = 'w'
 SLEEP_TRANS = 'S'
 WAKE_TRANS  = 'W'
 
-CALC_DAYLIGHT = True
 LOCATION = {'latitude': '40.45', 'longitude': '-79.17',
             'timezone': 'US/Eastern', 'elevation': 361.74}
 
@@ -56,7 +55,8 @@ def main(argv=sys.argv[1:]):
     except TypeError:
         out = sys.stdout
 
-    awc_data = ActigraphyDatabase(files, args.threshold, args.criteria, args.light_period)
+    awc_data = ActigraphyDatabase(files, args.threshold, args.criteria, \
+        args.light_period, args.calc_daylight)
     if awc_data.vars:
         print(awc_data, file=out)
     else:
@@ -81,6 +81,8 @@ def parse_args(argv):
         help='path to output sleep variables in csv format; default is to print to stdout')
     parser.add_argument('--light_period', '-l', type=str, default='7:00:00,19:00:00', \
         help='lights on and off times in 24-hour HH:MM:SS,HH:MM:SS format')
+    parser.add_argument('--calc_daylight', '-d', action='store_true', default=False, \
+        help='compare lights on/off times to sunrise and sunset to compute actual light period')
     if not sys.stdin.isatty():
         argv.insert(0, '')
 
@@ -201,12 +203,13 @@ class ActigraphyDatabase:
     '''An interface for applying functions to and computing variables
     across multiple AWC files.'''
 
-    def __init__(self, files, threshold, criteria, light_period):
+    def __init__(self, files, threshold, criteria, light_period, calc_daylight):
 
         self.awcs = []
         self.vars = []
 
         self.light_start, self.light_end = light_period.split(',')
+        self.calc_daylight = calc_daylight
 
         if files is not None:
             print("Scoring actigraphy files", file=sys.stderr)
@@ -254,7 +257,8 @@ class ActigraphyDatabase:
                 row['NOC'] = None
                 row['notes'] = ""
 
-                light_start, light_end = light_period(date, self.light_start, self.light_end)
+                light_start, light_end = light_period(date, self.light_start, \
+                    self.light_end, self.calc_daylight)
                 sleep_start, sleep_end = None, None
                 SOL, TWAK = None, None
 
@@ -394,7 +398,7 @@ class ActigraphyDatabase:
         return s
 
 
-def light_period(date, light_start, light_end):
+def light_period(date, light_start, light_end, calc_daylight):
 
     '''Get the time of light start or light end on a given date.
     Light start is sunrise or 7:00:00, whichever is earlier.
@@ -403,7 +407,7 @@ def light_period(date, light_start, light_end):
     light_start = dt.datetime.combine(date, dt.time(*map(int, light_start.split(':'))))
     light_end = dt.datetime.combine(date, dt.time(*map(int, light_end.split(':'))))
 
-    if CALC_DAYLIGHT: # compare against sunset and sunrise
+    if calc_daylight: # compare against sunset and sunrise
 
         local_tz = pytz.timezone(LOCATION['timezone'])
         utc_offset = local_tz.utcoffset(light_start)
