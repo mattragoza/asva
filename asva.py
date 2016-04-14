@@ -26,68 +26,6 @@ WAKE_TRANS  = 'W'
 LOCATION = {'latitude': '40.45', 'longitude': '-79.17',
             'timezone': 'US/Eastern', 'elevation': 361.74}
 
-def main(argv=sys.argv[1:]):
-
-    args, extra = parse_args(argv)
-
-    if extra:
-        print('error: received ' + str(len(extra)) + ' extra arguments', \
-            file=sys.stderr)
-        print('make sure to quote file patterns with spaces or wildcards', \
-            file=sys.stderr)
-        return 1
-    elif args.file_pattern:
-        files = glob.glob(args.file_pattern)
-    else:
-        files = [line.rstrip() for line in sys.stdin]
-
-    if len(files) == 0:
-        print('error: no input files were found', file=sys.stderr)
-        print('check that the file pattern is correct', file=sys.stderr)
-        return 1
-
-    try:
-        out = open(args.output, 'w')
-    except IOError:
-        print('error: could not access output file ' + args.output, file=sys.stderr)
-        print('it might be opened in another process', file=sys.stderr)
-        return 1
-    except TypeError:
-        out = sys.stdout
-
-    awc_data = ActigraphyDatabase(files, args.threshold, args.criteria, \
-        args.light_period, args.calc_daylight)
-    if awc_data.vars:
-        print(awc_data, file=out)
-    else:
-        print("error: no data to write", file=sys.stderr)
-    out.close()
-
-    return 0
-
-def parse_args(argv):
-
-    parser = argparse.ArgumentParser(
-        prog=__file__,
-        description='Actigraphy sleep variable analysis utility.',
-        epilog=None)
-    parser.add_argument('file_pattern', type=str, \
-        help='glob-style file pattern to get AWC files as input')
-    parser.add_argument('--threshold', '-t', type=float, default=1.0, \
-        help='activity threshold for classifying sleep and wake states in each minute; default is 1.0')
-    parser.add_argument('--criteria', '-c', type=str, default='9/10', \
-        help='ratio of states needed for a transition between sleep and wake periods; default is 9/10')
-    parser.add_argument('--output', '-o', type=str, \
-        help='path to output sleep variables in csv format; default is to print to stdout')
-    parser.add_argument('--light_period', '-l', type=str, default='7:00:00,19:00:00', \
-        help='lights on and off times in 24-hour HH:MM:SS,HH:MM:SS format')
-    parser.add_argument('--calc_daylight', '-d', action='store_true', default=False, \
-        help='compare lights on/off times to sunrise and sunset to compute actual light period')
-    if not sys.stdin.isatty():
-        argv.insert(0, '')
-
-    return parser.parse_known_args(argv)
-
 
 class AWC:
 
@@ -440,11 +378,77 @@ def light_period(date, light_start, light_end, calc_daylight):
     
     return light_start, light_end
 
+
 def min_diff(dt_i, dt_f):
 
     '''Returns the minute difference between two datetimes.'''
 
     return int((dt_f - dt_i).total_seconds()//60)
+
+
+def parse_args(argv):
+
+    parser = argparse.ArgumentParser(
+        prog=__file__,
+        description='Actigraphy sleep variable analysis utility.',
+        epilog=None)
+    parser.add_argument('file_pattern', type=str, \
+        help='glob-style file pattern to get AWC files as input')
+    parser.add_argument('--threshold', '-t', type=float, default=1.0, \
+        help='activity threshold for classifying sleep and wake states in each minute; default is 1.0')
+    parser.add_argument('--criteria', '-c', type=str, default='9/10', \
+        help='ratio of states needed for a transition between sleep and wake periods; default is 9/10')
+    parser.add_argument('--output', '-o', type=str, \
+        help='path to output sleep variables in csv format; default is to print to stdout')
+    parser.add_argument('--light_period', '-l', type=str, default='7:00:00,19:00:00', \
+        help='lights on and off times in 24-hour HH:MM:SS,HH:MM:SS format')
+    parser.add_argument('--calc_daylight', '-d', action='store_true', default=False, \
+        help='compare lights on/off times to sunrise and sunset to compute actual light period')
+    if not sys.stdin.isatty():
+        argv.insert(0, '')
+
+    return parser.parse_known_args(argv)
+
+    
+def main(argv=sys.argv[1:]):
+
+    args, extra = parse_args(argv)
+
+    if extra:
+        print('error: received extra arguments ' + str(extra), \
+            file=sys.stderr)
+        print('make sure to quote file patterns with spaces or wildcards', \
+            file=sys.stderr)
+        return 1
+    elif args.file_pattern:
+        files = glob.glob(args.file_pattern)
+    else:
+        files = [line.rstrip() for line in sys.stdin]
+
+    if len(files) == 0:
+        print('error: no input files were found', file=sys.stderr)
+        print('check that the file pattern is correct', file=sys.stderr)
+        return 1
+
+    try:
+        out = open(args.output, 'w')
+    except IOError:
+        print('error: could not access output file ' + args.output, file=sys.stderr)
+        print('it might be opened in another process', file=sys.stderr)
+        return 1
+    except TypeError:
+        out = sys.stdout
+
+    awc_data = ActigraphyDatabase(files, args.threshold, args.criteria, \
+        args.light_period, args.calc_daylight)
+    if awc_data.vars:
+        print(awc_data, file=out)
+    else:
+        print("error: no data to write", file=sys.stderr)
+    out.close()
+
+    return 0
+
 
 if __name__ == '__main__':
     sys.exit(main())
